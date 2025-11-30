@@ -1,0 +1,30 @@
+[project]
+name = "bloomberggpt-backend"
+version = "0.1.0"
+description = "Semantic markets backend (events + pgvector + FastAPI)"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "psycopg[binary]",
+  "python-dotenv",
+  "openai>=2.8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx",
+  "pytest",
+]
+
+[dependency-groups]
+dev = [
+    "fastapi[standard]",
+    "pytest",
+    "httpx",
+]
+
+[tool.uv.workspace]
+members = []
