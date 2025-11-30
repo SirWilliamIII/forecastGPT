@@ -15,6 +15,8 @@ dependencies = [
   "requests>=2.32.5",
   "jupyter-console>=6.6.3",
   "yfinance>=0.2.66",
+  "jupyter>=1.1.1",
+  "sqlalchemy>=2.0.44",
 ]
 
 [project.optional-dependencies]

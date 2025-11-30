@@ -1,37 +1,55 @@
+# backend/app.py
+
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
-from models.naive_asset_forecaster import naive_return_forecast, ForecastResult
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from psycopg import sql
 from dotenv import load_dotenv
+
 from db import get_conn
 from embeddings import embed_text
-from utils.url_utils import canonicalize_url  # <- make sure this exists
+from utils.url_utils import canonicalize_url
+
+from models.naive_asset_forecaster import (
+    forecast_asset as naive_forecast_asset,
+    ForecastResult,
+)
 from models.event_return_forecaster import (
     forecast_event_return,
     EventReturnForecastResult,
 )
+
+# ---------------------------------------------------------------------
+# Env + FastAPI init
+# ---------------------------------------------------------------------
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI(title="BloombergGPT Semantic Backend")
 
+# ---------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------
+
 
 class EventIn(BaseModel):
     timestamp: datetime = Field(..., description="UTC timestamp of the event")
     source: str = Field(..., description="Canonical source name, e.g., 'wired_ai'")
     url: Optional[str] = Field(
-        None, description="Canonicalized URL of the event (can be null for synthetic events)"
+        None,
+        description="Canonicalized URL of the event (can be null for synthetic events)",
     )
     title: str = Field(..., description="Headline or title of the event")
     summary: str = Field(..., description="Short summary or description")
     raw_text: str = Field(..., description="Raw combined text (title + summary)")
     clean_text: Optional[str] = Field(
-        None, description="Text fed into embeddings; defaults to raw_text if omitted"
+        None,
+        description="Text fed into embeddings; defaults to raw_text if omitted",
     )
     categories: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
@@ -59,16 +77,6 @@ class Neighbor(BaseModel):
     distance: float
 
 
-class AssetForecastOut(BaseModel):
-    symbol: str
-    horizon_minutes: int
-    mean_return: float
-    std_return: float
-    p_up: float
-    p_down: float
-    sample_size: int
-
-
 class EventReturnForecastOut(BaseModel):
     event_id: str
     symbol: str
@@ -80,6 +88,10 @@ class EventReturnForecastOut(BaseModel):
     sample_size: int
     neighbors_used: int
 
+
+# ---------------------------------------------------------------------
+# Event ingestion + similarity
+# ---------------------------------------------------------------------
 
 
 @app.post("/events")
@@ -217,22 +229,39 @@ def get_similar_events(event_id: UUID, limit: int = 10) -> Dict[str, Any]:
     return {"event_id": str(event_id), "neighbors": neighbors}
 
 
-@app.get("/forecast/asset", response_model=AssetForecastOut)
-def forecast_asset(symbol: str, horizon_minutes: int = 1440):
+# ---------------------------------------------------------------------
+# Asset-level naive forecaster
+# ---------------------------------------------------------------------
+
+
+@app.get("/forecast/asset")
+def forecast_asset_endpoint(
+    symbol: str,
+    horizon_minutes: int = 1440,
+    lookback_days: int = 60,
+):
     """
-    Baseline asset return forecaster.
-    Right now uses only historical numeric tape (no semantic conditioning yet).
+    Naive numeric forecaster for a given asset symbol.
+
+    Example:
+      GET /forecast/asset?symbol=BTC-USD&horizon_minutes=1440
     """
-    result: ForecastResult = naive_return_forecast(symbol, horizon_minutes)
-    return AssetForecastOut(
-        symbol=result.symbol,
-        horizon_minutes=result.horizon_minutes,
-        mean_return=result.mean_return,
-        std_return=result.std_return,
-        p_up=result.p_up,
-        p_down=result.p_down,
-        sample_size=result.sample_size,
+    as_of = datetime.now(tz=timezone.utc)
+
+    result: ForecastResult = naive_forecast_asset(
+        symbol=symbol,
+        as_of=as_of,
+        horizon_minutes=horizon_minutes,
+        lookback_days=lookback_days,
     )
+
+    return result.to_dict()
+
+
+# ---------------------------------------------------------------------
+# Event-conditioned (semantic) forecaster
+# ---------------------------------------------------------------------
+
 
 @app.get("/forecast/event/{event_id}", response_model=EventReturnForecastOut)
 def forecast_event_endpoint(
@@ -252,7 +281,7 @@ def forecast_event_endpoint(
       - looks up realized returns around those events,
       - computes a distance-weighted forecast.
 
-    If there's no data, it returns a neutral prior (0 mean, 0 std, 0.5/0.5).
+    If there's no data, EventReturnForecastResult will return neutral-ish stats.
     """
     result: EventReturnForecastResult = forecast_event_return(
         event_id=event_id,
@@ -275,3 +304,4 @@ def forecast_event_endpoint(
         sample_size=result.sample_size,
         neighbors_used=result.neighbors_used,
     )
+
