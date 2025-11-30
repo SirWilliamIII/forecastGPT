@@ -35,7 +35,7 @@ def event_exists(url: str) -> bool:
 
 
 def insert_event(entry) -> str:
-    event_id = uuid.uuid4()
+    event_id = uuid4()
 
     # Timestamp: RSS published or "now"
     if hasattr(entry, "published_parsed") and entry.published_parsed:
