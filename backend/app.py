@@ -2,33 +2,49 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
+import os
+
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from psycopg import sql
+from dotenv import load_dotenv
 
 from db import get_conn
 from embeddings import embed_text
-import os
-from dotenv import load_dotenv
+from utils.url_utils import canonicalize_url  # <- make sure this exists
+
 
 load_dotenv()
-
-OPENAI_API_KEY=os.getenv("OPENAI_API_KEY")
-
-breakpoint()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI(title="BloombergGPT Semantic Backend")
 
 
-class EventCreate(BaseModel):
-    timestamp: datetime
-    source: str
-    url: Optional[str] = None
-    raw_text: str
-    clean_text: Optional[str] = None
-    categories: Optional[List[str]] = None
-    tags: Optional[List[str]] = None
-    embed: Optional[List[float]] = None  # optional manual override
+class EventIn(BaseModel):
+    timestamp: datetime = Field(..., description="UTC timestamp of the event")
+    source: str = Field(..., description="Canonical source name, e.g., 'wired_ai'")
+    url: Optional[str] = Field(
+        None, description="Canonicalized URL of the event (can be null for synthetic events)"
+    )
+    title: str = Field(..., description="Headline or title of the event")
+    summary: str = Field(..., description="Short summary or description")
+    raw_text: str = Field(..., description="Raw combined text (title + summary)")
+    clean_text: Optional[str] = Field(
+        None, description="Text fed into embeddings; defaults to raw_text if omitted"
+    )
+    categories: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+
+
+class EventCreate(EventIn):
+    embed: Optional[List[float]] = Field(
+        default=None,
+        description="Optional manual embedding override; if omitted, backend generates one.",
+    )
+
+
+class EventOut(EventIn):
+    id: str = Field(..., description="UUID of the event")
 
 
 class Neighbor(BaseModel):
@@ -37,27 +53,32 @@ class Neighbor(BaseModel):
     source: str
     url: Optional[str]
     raw_text: str
-    categories: Optional[List[str]]
-    tags: Optional[List[str]]
+    categories: List[str]
+    tags: List[str]
     distance: float
 
 
 @app.post("/events")
-def create_event(event: EventCreate):
+def create_event(event: EventCreate) -> Dict[str, str]:
     """
     Insert a new event row.
     If no embedding is provided, we generate one from clean_text or raw_text.
     """
     event_id = uuid4()
 
-    # Pick which text to embed
-    text_to_embed = event.clean_text or event.raw_text
+    # Canonicalize URL if present
+    url = canonicalize_url(event.url) if event.url else None
+
+    # Choose text for embeddings and storage
+    clean_text = event.clean_text or event.raw_text
+    categories = event.categories or []
+    tags = event.tags or []
 
     # Generate embedding if not provided
     if event.embed is not None:
         embed_vector = event.embed
     else:
-        embed_vector = embed_text(text_to_embed)
+        embed_vector = embed_text(clean_text)
 
     # pgvector literal format: [0.1,0.2,...]
     embed_literal = "[" + ",".join(str(x) for x in embed_vector) + "]"
@@ -67,6 +88,8 @@ def create_event(event: EventCreate):
         "timestamp",
         "source",
         "url",
+        "title",
+        "summary",
         "raw_text",
         "clean_text",
         "categories",
@@ -77,11 +100,13 @@ def create_event(event: EventCreate):
         event_id,
         event.timestamp,
         event.source,
-        event.url,
+        url,
+        event.title,
+        event.summary,
         event.raw_text,
-        event.clean_text,
-        event.categories,
-        event.tags,
+        clean_text,
+        categories,
+        tags,
         embed_literal,
     ]
 
@@ -90,7 +115,7 @@ def create_event(event: EventCreate):
             cur.execute(
                 sql.SQL("INSERT INTO events ({}) VALUES ({})").format(
                     sql.SQL(", ").join(sql.Identifier(col) for col in cols),
-                    sql.SQL(", ").join(sql.Placeholder() * len(cols))
+                    sql.SQL(", ").join(sql.Placeholder() * len(cols)),
                 ),
                 values,
             )
@@ -99,7 +124,7 @@ def create_event(event: EventCreate):
 
 
 @app.get("/events/{event_id}/similar")
-def get_similar_events(event_id: UUID, limit: int = 10):
+def get_similar_events(event_id: UUID, limit: int = 10) -> Dict[str, Any]:
     """
     Return nearest neighbors in embedding space for a given event_id.
     """
@@ -151,18 +176,19 @@ def get_similar_events(event_id: UUID, limit: int = 10):
 
     neighbors: List[Neighbor] = []
     for r in rows:
-        row_dict: Dict[str, Any] = dict(r)
+        rd: Dict[str, Any] = dict(r)
         neighbors.append(
             Neighbor(
-                id=str(row_dict["id"]),
-                timestamp=row_dict["timestamp"],
-                source=row_dict["source"],
-                url=row_dict["url"],
-                raw_text=row_dict["raw_text"],
-                categories=row_dict["categories"],
-                tags=row_dict["tags"],
-                distance=float(row_dict["distance"]),
+                id=str(rd["id"]),
+                timestamp=rd["timestamp"],
+                source=rd["source"],
+                url=rd["url"],
+                raw_text=rd["raw_text"],
+                categories=rd["categories"] or [],
+                tags=rd["tags"] or [],
+                distance=float(rd["distance"]),
             )
         )
 
     return {"event_id": str(event_id), "neighbors": neighbors}
+
