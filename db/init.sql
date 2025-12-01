@@ -1,15 +1,31 @@
 -- Enable pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- Asset returns: realized returns for forecasting
+CREATE TABLE asset_returns (
+    symbol TEXT NOT NULL,
+    as_of TIMESTAMPTZ NOT NULL,
+    horizon_minutes INT NOT NULL,
+    realized_return DOUBLE PRECISION NOT NULL,
+    price_start DOUBLE PRECISION NOT NULL,
+    price_end DOUBLE PRECISION NOT NULL,
+    CONSTRAINT asset_returns_pkey PRIMARY KEY (symbol, as_of, horizon_minutes)
+);
+
+CREATE INDEX idx_asset_returns_lookup
+ON asset_returns (symbol, horizon_minutes, as_of);
+
 -- Events: news / announcements / filings / tweets, etc.
 CREATE TABLE events (
     id UUID PRIMARY KEY,
     timestamp TIMESTAMPTZ NOT NULL,
     source TEXT NOT NULL,            -- 'binance_announce', 'sec_rss', etc.
-    url TEXT,
+    url TEXT UNIQUE,                 -- canonicalized URL (unique to prevent duplicates)
+    title TEXT,                      -- headline or title
+    summary TEXT,                    -- short summary or description
     raw_text TEXT NOT NULL,
     clean_text TEXT,
-    embed VECTOR(1536),              -- semantic fingerprint
+    embed VECTOR(3072),              -- semantic fingerprint (text-embedding-3-large)
     categories TEXT[],               -- ['regulatory','hack','macro']
     tags TEXT[]                      -- ['btc','eth','exchange','sec']
 );
@@ -55,8 +71,6 @@ ON events USING GIN (categories);
 CREATE INDEX idx_events_tags
 ON events USING GIN (tags);
 
--- Vector index for semantic similarity
-CREATE INDEX idx_events_embed
-ON events
-USING ivfflat (embed vector_l2_ops)
-WITH (lists = 100);
+-- Note: pgvector indexes (IVFFlat, HNSW) have a 2000 dimension limit.
+-- For 3072-dim vectors, we skip the index and rely on exact search.
+-- This is fine for < 100k events. For larger scale, consider dimensionality reduction.

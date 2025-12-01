@@ -1,3 +1,6 @@
+# backend/ingest/backfill_crypto_returns.py
+import os
+import time
 from datetime import datetime
 from typing import Dict
 
@@ -12,6 +15,8 @@ CRYPTO_CONFIG: Dict[str, str] = {
     "XMR-USD": "XMR-USD",
 }
 
+MAX_DOWNLOAD_RETRIES = int(os.getenv("MAX_DOWNLOAD_RETRIES", "3"))
+
 
 def backfill_symbol(
     symbol: str,
@@ -21,32 +26,42 @@ def backfill_symbol(
 ) -> None:
     print(f"[backfill] Fetching {yahoo_ticker} for last {days} days...")
 
-    df = yf.download(
-        yahoo_ticker,
-        period=f"{days}d",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-    )
+    df = None
+    last_error: Exception | None = None
 
-    if df.empty:
-        print(f"[backfill] No data returned for {symbol}")
+    for attempt in range(MAX_DOWNLOAD_RETRIES):
+        try:
+            df = yf.download(
+                yahoo_ticker,
+                period=f"{days}d",
+                interval="1d",
+                auto_adjust=False,
+                progress=False,
+            )
+            if df is not None and not df.empty:
+                break
+        except Exception as e:
+            last_error = e
+            if attempt < MAX_DOWNLOAD_RETRIES - 1:
+                delay = 2 ** attempt
+                print(f"[backfill] Error downloading {yahoo_ticker} ({e}); retrying in {delay}s...")
+                time.sleep(delay)
+
+    if df is None or df.empty:
+        print(f"[backfill] No data returned for {symbol} after {MAX_DOWNLOAD_RETRIES} attempts. Last error: {last_error}")
         return
 
-    # Close prices – can be a Series or a DataFrame depending on yfinance
     closes = df["Close"]
     if isinstance(closes, pd.DataFrame):
         closes = closes.iloc[:, 0]
 
     closes = closes.dropna()
 
-    # Ensure timezone-aware UTC
     if closes.index.tz is None:
         closes.index = closes.index.tz_localize("UTC")
     else:
         closes.index = closes.index.tz_convert("UTC")
 
-    # For each consecutive pair (t0 -> t1) create one return row
     inserted = 0
     for i in range(len(closes) - 1):
         t0 = closes.index[i]
@@ -77,4 +92,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

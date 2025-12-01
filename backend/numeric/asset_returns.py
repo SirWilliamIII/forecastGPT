@@ -1,5 +1,4 @@
 # backend/numeric/asset_returns.py
-from uuid import uuid4
 from datetime import datetime, timezone
 from typing import List, Tuple
 from db import get_conn
@@ -16,8 +15,8 @@ def insert_asset_return(
     Insert a single realized return row.
 
     Idempotent because of:
-      UNIQUE (symbol, as_of, horizon_minutes)
-      ON CONFLICT (symbol, as_of, horizon_minutes) DO NOTHING
+      PRIMARY KEY (symbol, as_of, horizon_minutes)
+      ON CONFLICT DO NOTHING
     """
     realized = (price_end - price_start) / price_start
 
@@ -26,7 +25,6 @@ def insert_asset_return(
             cur.execute(
                 """
                 INSERT INTO asset_returns (
-                    id,
                     symbol,
                     as_of,
                     horizon_minutes,
@@ -34,12 +32,11 @@ def insert_asset_return(
                     price_start,
                     price_end
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (symbol, as_of, horizon_minutes)
                 DO NOTHING
                 """,
                 (
-                    uuid4(),
                     symbol,
                     as_of,
                     horizon_minutes,

@@ -8,7 +8,7 @@ requires-python = ">=3.11"
 dependencies = [
   "fastapi",
   "uvicorn[standard]",
-  "psycopg[binary]",
+  "psycopg[binary,pool]",
   "python-dotenv",
   "openai>=2.8.1",
   "feedparser>=6.0.12",
@@ -17,6 +17,9 @@ dependencies = [
   "yfinance>=0.2.66",
   "jupyter>=1.1.1",
   "sqlalchemy>=2.0.44",
+  "anthropic>=0.75.0",
+  "google-generativeai>=0.8.5",
+  "apscheduler>=3.10.0",
 ]
 
 [project.optional-dependencies]
