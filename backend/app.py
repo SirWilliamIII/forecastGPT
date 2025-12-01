@@ -10,20 +10,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from psycopg import sql
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from db import get_conn, close_pool
 from embeddings import embed_text
-from apscheduler.schedulers.background import BackgroundScheduler
 from utils.url_utils import canonicalize_url
 
-from models.naive_asset_forecaster import (
-    forecast_asset as naive_forecast_asset,
-    ForecastResult,
-)
+from models.naive_asset_forecaster import forecast_asset
 from models.event_return_forecaster import (
     forecast_event_return,
     EventReturnForecastResult,
 )
+from models.regime_classifier import classify_regime
 
 # ---------------------------------------------------------------------
 # Env + FastAPI init
@@ -38,10 +36,11 @@ app = FastAPI(title="BloombergGPT Semantic Backend")
 scheduler = BackgroundScheduler()
 
 
-def run_rss_ingest():
+def run_rss_ingest() -> None:
     """Background job to ingest RSS feeds."""
     try:
         from ingest.rss_ingest import main as ingest_main
+
         print("[scheduler] Running RSS ingestion...")
         ingest_main()
         print("[scheduler] RSS ingestion complete.")
@@ -49,10 +48,11 @@ def run_rss_ingest():
         print(f"[scheduler] RSS ingestion error: {e}")
 
 
-def run_crypto_backfill():
+def run_crypto_backfill() -> None:
     """Background job to backfill crypto prices."""
     try:
         from ingest.backfill_crypto_returns import main as backfill_main
+
         print("[scheduler] Running crypto backfill...")
         backfill_main()
         print("[scheduler] Crypto backfill complete.")
@@ -61,21 +61,24 @@ def run_crypto_backfill():
 
 
 @app.on_event("startup")
-def startup_event():
+def startup_event() -> None:
     """Run ingestion on startup and schedule periodic jobs."""
     # Run immediately on startup
     run_rss_ingest()
     run_crypto_backfill()
-    
+
     # Schedule RSS every hour, crypto daily
     scheduler.add_job(run_rss_ingest, "interval", hours=1, id="rss_ingest")
     scheduler.add_job(run_crypto_backfill, "interval", hours=24, id="crypto_backfill")
     scheduler.start()
-    print("[scheduler] Started background ingestion scheduler (RSS: hourly, crypto: daily).")
+    print(
+        "[scheduler] Started background ingestion scheduler "
+        "(RSS: hourly, crypto: daily)."
+    )
 
 
 @app.on_event("shutdown")
-def shutdown_event():
+def shutdown_event() -> None:
     """Gracefully close scheduler and connection pool on shutdown."""
     scheduler.shutdown(wait=False)
     close_pool()
@@ -120,7 +123,9 @@ class EventIn(BaseModel):
 class EventCreate(EventIn):
     embed: Optional[List[float]] = Field(
         default=None,
-        description="Optional manual embedding override; if omitted, backend generates one.",
+        description=(
+            "Optional manual embedding override; if omitted, backend generates one."
+        ),
     )
 
 
@@ -163,6 +168,8 @@ class AssetForecastOut(BaseModel):
     mean_return: Optional[float]
     vol_return: Optional[float]
     features: Dict[str, Any]
+    regime: Optional[str] = None
+    regime_score: Optional[float] = None
 
 
 class EventSummary(BaseModel):
@@ -180,6 +187,22 @@ class HealthCheck(BaseModel):
     status: str
     database: str
     pgvector: str
+
+
+class EventAnalysisOut(BaseModel):
+    event_id: str
+    sentiment: str
+    impact_score: float
+    confidence: float
+    reasoning: str
+    tags: List[str]
+    provider: str
+
+
+class SentimentOut(BaseModel):
+    text: str
+    sentiment: str
+    provider: str
 
 
 # ---------------------------------------------------------------------
@@ -204,7 +227,9 @@ def health_check() -> HealthCheck:
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+                cur.execute(
+                    "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+                )
                 row = cur.fetchone()
                 if not row:
                     pgvector_status = "not_installed"
@@ -412,26 +437,32 @@ def get_similar_events(event_id: UUID, limit: int = 10) -> Dict[str, Any]:
 
 @app.get("/forecast/asset", response_model=AssetForecastOut)
 def forecast_asset_endpoint(
-    symbol: str,
-    horizon_minutes: int = 1440,
-    lookback_days: int = 60,
+    symbol: str = Query(..., description="e.g. BTC-USD"),
+    horizon_minutes: int = Query(1440, description="Forecast horizon in minutes"),
+    lookback_days: int = Query(60, description="Lookback window for features"),
 ) -> AssetForecastOut:
     """
-    Naive numeric forecaster for a given asset symbol.
+    Numeric baseline forecaster for a given asset symbol.
 
     Example:
-      GET /forecast/asset?symbol=BTC-USD&horizon_minutes=1440
+      GET /forecast/asset?symbol=BTC-USD&horizon_minutes=1440&lookback_days=60
     """
     as_of = datetime.now(tz=timezone.utc)
 
-    result: ForecastResult = naive_forecast_asset(
+    asset_res = forecast_asset(
         symbol=symbol,
         as_of=as_of,
         horizon_minutes=horizon_minutes,
         lookback_days=lookback_days,
     )
 
-    return AssetForecastOut(**result.to_dict())
+    regime_res = classify_regime(symbol, as_of)
+
+    payload = asset_res.to_dict()
+    payload["regime"] = regime_res.regime
+    payload["regime_score"] = regime_res.score
+
+    return AssetForecastOut(**payload)
 
 
 # ---------------------------------------------------------------------
@@ -448,16 +479,14 @@ def forecast_event_endpoint(
     lookback_days: int = 365,
     price_window_minutes: int = 60,
     alpha: float = 0.5,
-):
+) -> EventReturnForecastOut:
     """
-    Phase 1 event-based forecaster.
+    Event-based forecaster.
 
     Given a stored event_id and an asset symbol/horizon, this:
       - finds semantically similar past events,
       - looks up realized returns around those events,
       - computes a distance-weighted forecast.
-
-    If there's no data, EventReturnForecastResult will return neutral-ish stats.
     """
     result: EventReturnForecastResult = forecast_event_return(
         event_id=event_id,
@@ -487,22 +516,6 @@ def forecast_event_endpoint(
 # ---------------------------------------------------------------------
 
 
-class EventAnalysisOut(BaseModel):
-    event_id: str
-    sentiment: str
-    impact_score: float
-    confidence: float
-    reasoning: str
-    tags: List[str]
-    provider: str
-
-
-class SentimentOut(BaseModel):
-    text: str
-    sentiment: str
-    provider: str
-
-
 @app.get("/analyze/event/{event_id}", response_model=EventAnalysisOut)
 def analyze_event_endpoint(
     event_id: UUID,
@@ -510,7 +523,7 @@ def analyze_event_endpoint(
     provider: str = "claude",
 ) -> EventAnalysisOut:
     """
-    Analyze an event for market impact using LLM.
+    Analyze an event for market impact using an LLM.
 
     Providers: claude (default), openai, gemini
     """
