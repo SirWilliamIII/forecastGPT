@@ -3,6 +3,9 @@ set -euo pipefail
 
 # BloombergGPT Development Runner
 # Starts database, backend, and frontend in one command
+#
+# Performance tip: Create backend/.env with DISABLE_STARTUP_INGESTION=true
+# to skip RSS/crypto ingestion on every restart (saves time and API costs)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"

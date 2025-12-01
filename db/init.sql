@@ -54,6 +54,16 @@ CREATE TABLE event_impacts (
     PRIMARY KEY (event_id, asset)
 );
 
+-- Feed metadata: track last fetch time per RSS source
+CREATE TABLE feed_metadata (
+    source TEXT PRIMARY KEY,
+    last_fetched TIMESTAMPTZ NOT NULL,
+    last_entry_count INT NOT NULL DEFAULT 0,
+    last_inserted_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Helpful indexes
 
 -- Fast time range queries on prices

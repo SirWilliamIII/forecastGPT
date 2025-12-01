@@ -20,8 +20,9 @@ class RegimeResult:
 def classify_regime(symbol: str, as_of: datetime) -> RegimeResult:
     feats = build_price_features(symbol, as_of)
 
-    r_7d = feats.get("r_7d", 0.0)
-    vol_30d = feats.get("vol_30d", 0.0)
+    # Access dataclass fields directly (not dict keys)
+    r_7d = feats.r_7d or 0.0
+    vol_30d = feats.vol_30d or 0.0
 
     # tiny heuristic: strong positive 7d momentum vs volatility
     threshold = 0.02 + 0.5 * vol_30d

@@ -29,6 +29,7 @@ from models.regime_classifier import classify_regime
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+DISABLE_STARTUP_INGESTION = os.getenv("DISABLE_STARTUP_INGESTION", "false").lower() in ("true", "1", "yes")
 
 app = FastAPI(title="BloombergGPT Semantic Backend")
 
@@ -63,7 +64,13 @@ def run_crypto_backfill() -> None:
 @app.on_event("startup")
 def startup_event() -> None:
     """Run ingestion on startup and schedule periodic jobs."""
-    # Run immediately on startup
+    if DISABLE_STARTUP_INGESTION:
+        print("[scheduler] ⚠️  Startup ingestion DISABLED (DISABLE_STARTUP_INGESTION=true)")
+        print("[scheduler] Set DISABLE_STARTUP_INGESTION=false to enable automatic ingestion")
+        return
+
+    # Run immediately on startup (with skip_recent=True for faster subsequent runs)
+    print("[scheduler] Running initial ingestion...")
     run_rss_ingest()
     run_crypto_backfill()
 
@@ -72,8 +79,8 @@ def startup_event() -> None:
     scheduler.add_job(run_crypto_backfill, "interval", hours=24, id="crypto_backfill")
     scheduler.start()
     print(
-        "[scheduler] Started background ingestion scheduler "
-        "(RSS: hourly, crypto: daily)."
+        "[scheduler] ✓ Started background ingestion scheduler "
+        "(RSS: hourly, crypto: daily)"
     )
 
 
