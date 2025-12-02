@@ -107,9 +107,13 @@ start_db
 
 # Step 2: Start backend
 log "Starting backend server..."
+
+# Clear inherited venv to prevent conflicts with uv
+unset VIRTUAL_ENV
+
 cd "$SCRIPT_DIR/backend"
 
-# Sync dependencies
+# Sync dependencies (UV_PROJECT_ENVIRONMENT=.venv set in .zprofile)
 uv sync --quiet
 
 # Backfill crypto prices if asset_returns table is empty
@@ -124,7 +128,7 @@ else
 fi
 
 # Start uvicorn in background (RSS ingest runs on startup via scheduler)
-uv run uvicorn app:app --reload --host 127.0.0.1 --port 9000 &
+uv run --isolated uvicorn app:app --reload --host 127.0.0.1 --port 9000 &
 BACKEND_PID=$!
 
 # Wait a moment for backend to start
