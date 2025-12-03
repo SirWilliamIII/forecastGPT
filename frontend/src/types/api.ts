@@ -69,6 +69,20 @@ export interface HealthCheck {
   pgvector: string;
 }
 
+export interface Projection {
+  symbol: string;
+  as_of: string;
+  horizon_minutes: number;
+  metric: string;
+  projected_value: number;
+  model_source: string;
+  game_id?: number;
+  run_id?: string;
+  opponent?: string;
+  opponent_name?: string;
+  meta?: Record<string, unknown>;
+}
+
 export const SYMBOLS = ["BTC-USD", "ETH-USD", "XMR-USD"] as const;
 export type Symbol = (typeof SYMBOLS)[number];
 

@@ -15,6 +15,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from db import get_conn, close_pool
 from embeddings import embed_text
 from utils.url_utils import canonicalize_url
+from utils.team_config import load_team_config
 
 from models.naive_asset_forecaster import forecast_asset
 from models.event_return_forecaster import (
@@ -22,6 +23,10 @@ from models.event_return_forecaster import (
     EventReturnForecastResult,
 )
 from models.regime_classifier import classify_regime
+from numeric.asset_projections import get_latest_projections
+
+# shared config for projections
+TEAM_CONFIG = load_team_config()
 
 # ---------------------------------------------------------------------
 # Env + FastAPI init
@@ -30,6 +35,7 @@ from models.regime_classifier import classify_regime
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DISABLE_STARTUP_INGESTION = os.getenv("DISABLE_STARTUP_INGESTION", "false").lower() in ("true", "1", "yes")
+DISABLE_NFL_ELO_INGEST = os.getenv("DISABLE_NFL_ELO_INGEST", "false").lower() in ("true", "1", "yes")
 
 app = FastAPI(title="BloombergGPT Semantic Backend")
 
@@ -61,6 +67,45 @@ def run_crypto_backfill() -> None:
         print(f"[scheduler] Crypto backfill error: {e}")
 
 
+def run_equity_backfill() -> None:
+    """Background job to backfill equity prices (e.g., NVDA)."""
+    try:
+        from ingest.backfill_equity_returns import main as backfill_main
+
+        print("[scheduler] Running equity backfill...")
+        backfill_main()
+        print("[scheduler] Equity backfill complete.")
+    except Exception as e:
+        print(f"[scheduler] Equity backfill error: {e}")
+
+
+def run_nfl_elo_backfill() -> None:
+    """Background job to backfill NFL Elo deltas for selected teams."""
+    if DISABLE_NFL_ELO_INGEST:
+        print("[scheduler] NFL Elo ingestion disabled (DISABLE_NFL_ELO_INGEST=true)")
+        return
+    try:
+        from ingest.backfill_nfl_elo import main as backfill_main
+
+        print("[scheduler] Running NFL Elo backfill...")
+        backfill_main()
+        print("[scheduler] NFL Elo backfill complete.")
+    except Exception as e:
+        print(f"[scheduler] NFL Elo backfill error: {e}")
+
+
+def run_baker_projections() -> None:
+    """Background job to ingest Baker NFL projections (win probabilities)."""
+    try:
+        from ingest.baker_projections import ingest_once
+
+        print("[scheduler] Running Baker projections ingest...")
+        ingest_once()
+        print("[scheduler] Baker projections ingest complete.")
+    except Exception as e:
+        print(f"[scheduler] Baker projections error: {e}")
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     """Run ingestion on startup and schedule periodic jobs."""
@@ -73,14 +118,20 @@ def startup_event() -> None:
     print("[scheduler] Running initial ingestion...")
     run_rss_ingest()
     run_crypto_backfill()
+    run_equity_backfill()
+    run_nfl_elo_backfill()
+    run_baker_projections()
 
     # Schedule RSS every hour, crypto daily
     scheduler.add_job(run_rss_ingest, "interval", hours=1, id="rss_ingest")
     scheduler.add_job(run_crypto_backfill, "interval", hours=24, id="crypto_backfill")
+    scheduler.add_job(run_equity_backfill, "interval", hours=24, id="equity_backfill")
+    scheduler.add_job(run_nfl_elo_backfill, "interval", hours=24, id="nfl_elo_backfill")
+    scheduler.add_job(run_baker_projections, "interval", hours=1, id="baker_projections")
     scheduler.start()
     print(
         "[scheduler] ✓ Started background ingestion scheduler "
-        "(RSS: hourly, crypto: daily)"
+        "(RSS/Baker: hourly, crypto/equity/NFL Elo: daily)"
     )
 
 
@@ -161,6 +212,20 @@ class EventReturnForecastOut(BaseModel):
     p_down: float
     sample_size: int
     neighbors_used: int
+
+
+class ProjectionOut(BaseModel):
+    symbol: str
+    as_of: datetime
+    horizon_minutes: int
+    metric: str
+    projected_value: float
+    model_source: str
+    game_id: Optional[int] = None
+    run_id: Optional[str] = None
+    opponent: Optional[str] = None
+    opponent_name: Optional[str] = None
+    meta: Optional[Dict[str, Any]] = None
 
 
 class AssetForecastOut(BaseModel):
@@ -246,6 +311,52 @@ def health_check() -> HealthCheck:
     overall = "healthy" if db_status == "ok" and pgvector_status == "ok" else "unhealthy"
 
     return HealthCheck(status=overall, database=db_status, pgvector=pgvector_status)
+
+
+@app.get("/ingest/health")
+def ingest_health() -> Dict[str, Any]:
+    """
+    Lightweight ingest health snapshot.
+    - feed_metadata last_fetched
+    - events count
+    - asset_returns latest as_of
+    - asset_projections latest as_of
+    - ingest_status per job
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT max(last_fetched) as last_fetched FROM feed_metadata")
+            fm = cur.fetchone() or {}
+            cur.execute("SELECT count(*) AS cnt FROM events")
+            ev = cur.fetchone() or {}
+            cur.execute("SELECT max(as_of) AS max_as_of FROM asset_returns")
+            ar = cur.fetchone() or {}
+            cur.execute("SELECT max(as_of) AS max_as_of FROM asset_projections")
+            ap = cur.fetchone() or {}
+            cur.execute(
+                """
+                SELECT job_name, last_success, last_error, last_error_message, last_rows_inserted, updated_at
+                FROM ingest_status
+                """
+            )
+            status_rows = cur.fetchall() or []
+
+    ingest_status = {}
+    for r in status_rows:
+        ingest_status[r["job_name"]] = {
+            "last_success": r["last_success"],
+            "last_error": r["last_error"],
+            "last_error_message": r["last_error_message"],
+            "last_rows_inserted": r["last_rows_inserted"],
+            "updated_at": r["updated_at"],
+        }
+    return {
+        "feed_metadata_last_fetched": fm.get("last_fetched"),
+        "events_count": ev.get("cnt", 0),
+        "asset_returns_last_as_of": ar.get("max_as_of"),
+        "asset_projections_last_as_of": ap.get("max_as_of"),
+        "ingest_status": ingest_status,
+    }
 
 
 # ---------------------------------------------------------------------
@@ -519,6 +630,50 @@ def forecast_event_endpoint(
 
 
 # ---------------------------------------------------------------------
+# Projections (Baker, etc.)
+# ---------------------------------------------------------------------
+
+
+@app.get("/projections/latest", response_model=List[ProjectionOut])
+def get_latest_projections_endpoint(
+    symbol: str = Query(..., description="Target ID, e.g., NFL:KC_CHIEFS"),
+    metric: str = Query("win_prob", description="Projection metric, e.g., win_prob"),
+    limit: int = Query(5, ge=1, le=50, description="Max rows to return"),
+) -> List[ProjectionOut]:
+    rows = get_latest_projections(symbol=symbol, metric=metric, limit=limit)
+    if not rows:
+        return []
+
+    results: List[ProjectionOut] = []
+    for row in rows:
+        results.append(
+            ProjectionOut(
+                symbol=row["symbol"],
+                as_of=row["as_of"],
+                horizon_minutes=row["horizon_minutes"],
+                metric=row["metric"],
+                projected_value=row["projected_value"],
+                model_source=row["model_source"],
+                game_id=row.get("game_id"),
+                run_id=row.get("run_id"),
+                opponent=row.get("opponent"),
+                opponent_name=row.get("opponent_name"),
+                meta=row.get("meta"),
+            )
+        )
+    return results
+
+
+@app.get("/projections/teams")
+def get_projection_teams() -> Dict[str, str]:
+    """
+    Return available team abbreviations -> target IDs for projections.
+    Sourced from BAKER_TEAM_MAP env or defaults.
+    """
+    return TEAM_CONFIG
+
+
+# ---------------------------------------------------------------------
 # LLM-powered analysis endpoints
 # ---------------------------------------------------------------------
 
@@ -594,4 +749,3 @@ def analyze_sentiment_endpoint(
     except Exception as e:
         print(f"[llm] Unexpected error in classify_sentiment: {e}")
         raise HTTPException(status_code=503, detail="LLM provider error")
-

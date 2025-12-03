@@ -7,12 +7,21 @@ import { ForecastCard } from "@/components/ForecastCard";
 import { SymbolSelector } from "@/components/SymbolSelector";
 import { HorizonSelector } from "@/components/HorizonSelector";
 import { EventList } from "@/components/EventList";
-import { getAssetForecast, getRecentEvents, getHealth } from "@/lib/api";
+import { ProjectionCard } from "@/components/ProjectionCard";
+import {
+  getAssetForecast,
+  getRecentEvents,
+  getHealth,
+  getLatestProjections,
+  getProjectionTeams,
+} from "@/lib/api";
 import type { Symbol } from "@/types/api";
 
 export default function Dashboard() {
   const [symbol, setSymbol] = useState<Symbol>("BTC-USD");
   const [horizon, setHorizon] = useState(1440);
+  const [projectionSymbol, setProjectionSymbol] = useState<string>("NFL:KC_CHIEFS");
+  const [projectionTeams, setProjectionTeams] = useState<Record<string, string>>({});
 
   const {
     data: forecast,
@@ -32,6 +41,26 @@ export default function Dashboard() {
     queryKey: ["health"],
     queryFn: getHealth,
     refetchInterval: 30000,
+  });
+
+  const {
+    data: projections,
+    isLoading: projectionsLoading,
+    refetch: refetchProjections,
+  } = useQuery({
+    queryKey: ["projections", projectionSymbol],
+    queryFn: () => getLatestProjections(projectionSymbol, "win_prob", 5),
+  });
+
+  useQuery({
+    queryKey: ["projection-teams"],
+    queryFn: getProjectionTeams,
+    onSuccess: (data) => {
+      setProjectionTeams(data);
+      if (!projectionSymbol && Object.values(data).length > 0) {
+        setProjectionSymbol(Object.values(data)[0]);
+      }
+    },
   });
 
   return (
@@ -58,7 +87,10 @@ export default function Dashboard() {
             </div>
           )}
           <button
-            onClick={() => refetchForecast()}
+            onClick={() => {
+              refetchForecast();
+              refetchProjections();
+            }}
             className="flex items-center gap-2 rounded-lg bg-gray-800 px-4 py-2 text-sm transition-colors hover:bg-gray-700"
           >
             <RefreshCw className="h-4 w-4" />
@@ -80,12 +112,18 @@ export default function Dashboard() {
       </div>
 
       {/* Main Grid */}
+      {/* Markets + Events */}
       <div className="grid gap-8 lg:grid-cols-3">
-        {/* Forecast Section */}
+        {/* Market Forecast Section */}
         <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center gap-2">
             <Activity className="h-5 w-5 text-blue-500" />
-            <h2 className="text-xl font-semibold">Forecast</h2>
+            <div>
+              <h2 className="text-xl font-semibold">Market Forecasts</h2>
+              <p className="text-sm text-gray-400">
+                Numeric returns for financial symbols (BTC/ETH/XMR for now).
+              </p>
+            </div>
           </div>
 
           {forecastLoading ? (
@@ -138,7 +176,12 @@ export default function Dashboard() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Newspaper className="h-5 w-5 text-blue-500" />
-              <h2 className="text-xl font-semibold">Recent Events</h2>
+              <div>
+                <h2 className="text-xl font-semibold">Recent Events</h2>
+                <p className="text-sm text-gray-400">
+                  Semantic news/posts landing in the events store.
+                </p>
+              </div>
             </div>
             <a
               href="/events"
@@ -163,6 +206,52 @@ export default function Dashboard() {
             <EventList events={events} />
           ) : null}
         </div>
+      </div>
+
+      {/* Sports Projections */}
+      <div className="space-y-4 rounded-xl border border-gray-800 bg-gray-900/50 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-blue-500" />
+            <div>
+              <h2 className="text-xl font-semibold">NFL Projections</h2>
+              <p className="text-sm text-gray-400">
+                Baker win probabilities per game, updated from the ingestion
+                pipeline.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {Object.values(projectionTeams).map((team) => {
+              const isActive = projectionSymbol === team;
+              return (
+                <button
+                  key={team}
+                  onClick={() => setProjectionSymbol(team)}
+                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                    isActive
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  {team.replace("NFL:", "").replace("_", " ")}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => refetchProjections()}
+              className="flex items-center gap-1 rounded bg-gray-800 px-3 py-1 text-xs text-gray-200 hover:bg-gray-700"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </button>
+          </div>
+        </div>
+        <ProjectionCard
+          symbol={projectionSymbol}
+          projections={projections}
+          isLoading={projectionsLoading}
+        />
       </div>
     </div>
   );

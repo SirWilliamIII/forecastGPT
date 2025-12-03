@@ -7,6 +7,7 @@ import type {
   EventReturnForecast,
   EventAnalysis,
   HealthCheck,
+  Projection,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
@@ -90,4 +91,22 @@ export async function analyzeEvent(
   return fetchJson<EventAnalysis>(
     `${API_BASE}/analyze/event/${eventId}?${params}`
   );
+}
+
+// Projections (e.g., Baker win probabilities)
+export async function getLatestProjections(
+  symbol: string,
+  metric = "win_prob",
+  limit = 5
+): Promise<Projection[]> {
+  const params = new URLSearchParams({
+    symbol,
+    metric,
+    limit: String(limit),
+  });
+  return fetchJson<Projection[]>(`${API_BASE}/projections/latest?${params}`);
+}
+
+export async function getProjectionTeams(): Promise<Record<string, string>> {
+  return fetchJson<Record<string, string>>(`${API_BASE}/projections/teams`);
 }
