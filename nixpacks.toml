@@ -1,10 +1,9 @@
 # Railway/Nixpacks configuration
 [phases.setup]
-nixPkgs = ["python311", "postgresql"]
+nixPkgs = ["python311", "pip"]
 
 [phases.install]
 cmds = [
-    "python -m pip install --upgrade pip",
     "pip install uv",
     "cd backend && uv sync --frozen"
 ]
