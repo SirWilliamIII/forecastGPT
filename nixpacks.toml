@@ -4,6 +4,7 @@ nixPkgs = ["python311", "postgresql"]
 
 [phases.install]
 cmds = [
+    "python -m pip install --upgrade pip",
     "pip install uv",
     "cd backend && uv sync --frozen"
 ]
