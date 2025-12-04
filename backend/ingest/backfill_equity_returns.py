@@ -2,6 +2,7 @@
 # Example equity backfill to prove non-crypto numeric ingestion.
 
 import os
+import sys
 import time
 from datetime import datetime
 from typing import Dict
@@ -9,14 +10,14 @@ from typing import Dict
 import pandas as pd
 import yfinance as yf
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(CURRENT_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+
 from numeric.asset_returns import insert_asset_return
-
-# Mapping of target_id -> Yahoo Finance ticker
-EQUITY_CONFIG: Dict[str, str] = {
-    "NVDA": "NVDA",
-}
-
-MAX_DOWNLOAD_RETRIES = int(os.getenv("MAX_DOWNLOAD_RETRIES", "3"))
+from ingest.status import update_ingest_status
+from config import get_equity_symbols, MAX_DOWNLOAD_RETRIES
 
 
 def backfill_equity(
@@ -24,7 +25,7 @@ def backfill_equity(
     yahoo_ticker: str,
     days: int = 365,
     horizon_minutes: int = 1440,
-) -> None:
+) -> int:
     """Fetch OHLC and insert daily returns for an equity symbol."""
     print(f"[backfill] Fetching {yahoo_ticker} for last {days} days...")
 
@@ -51,7 +52,7 @@ def backfill_equity(
 
     if df is None or df.empty:
         print(f"[backfill] No data returned for {symbol} after {MAX_DOWNLOAD_RETRIES} attempts. Last error: {last_error}")
-        return
+        return 0
 
     closes = df["Close"]
     if isinstance(closes, pd.DataFrame):
@@ -75,21 +76,31 @@ def backfill_equity(
 
         as_of: datetime = t0.to_pydatetime()
 
-        insert_asset_return(
-            symbol=symbol,
-            as_of=as_of,
-            horizon_minutes=horizon_minutes,
-            price_start=p0,
-            price_end=p1,
-        )
-        inserted += 1
+        try:
+            insert_asset_return(
+                symbol=symbol,
+                as_of=as_of,
+                horizon_minutes=horizon_minutes,
+                price_start=p0,
+                price_end=p1,
+            )
+            inserted += 1
+        except ValueError as e:
+            print(f"[backfill] Skipping invalid data point at {as_of}: {e}")
+            continue
 
     print(f"[backfill] Inserted ~{inserted} rows for {symbol}")
+    return inserted
 
 
 def main() -> None:
-    for symbol, ticker in EQUITY_CONFIG.items():
-        backfill_equity(symbol, ticker, days=365, horizon_minutes=1440)
+    total_inserted = 0
+    equity_symbols = get_equity_symbols()
+    for symbol, ticker in equity_symbols.items():
+        total_inserted += backfill_equity(symbol, ticker, days=365, horizon_minutes=1440)
+
+    # Update ingest status
+    update_ingest_status("equity_backfill", total_inserted)
 
 
 if __name__ == "__main__":

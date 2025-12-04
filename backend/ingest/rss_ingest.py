@@ -8,7 +8,6 @@ from requests.exceptions import RequestException
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Dict, List, Set, Optional, Tuple
-from urllib.parse import urlparse
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PARENT_DIR = os.path.dirname(CURRENT_DIR)
@@ -18,21 +17,101 @@ if PARENT_DIR not in sys.path:
 from db import get_conn
 from embeddings import embed_text
 from utils.url_utils import canonicalize_url
+from ingest.status import update_ingest_status
 
-# RSS Feed Configuration: { source_name: url }
-RSS_FEEDS: Dict[str, str] = {
-    "wired_ai": "https://www.wired.com/feed/tag/ai/latest/rss",
-    "stoic_manual": "https://www.thestoicmanual.com/feed",
-    "philosophize_this": "https://philosophizethis.substack.com/feed",
-    "hardcore_software": "https://hardcoresoftware.learningbyshipping.com/feed",
-    "nietzsche_wisdoms": "https://nietzschewisdoms.substack.com/feed",
-    "hacker_news": "https://news.ycombinator.com/rss",
-    "cabassa": "https://cabassa.substack.com/feed",
-    "official_urban": "https://theofficialurban.substack.com/feed",
+# Domain categories for feeds
+DOMAIN_CRYPTO = "crypto"
+DOMAIN_SPORTS = "sports"
+DOMAIN_TECH = "tech"
+DOMAIN_GENERAL = "general"
+
+# RSS Feed Configuration with domain categorization
+# Format: { source_name: { "url": ..., "domain": ... } }
+# Only market-relevant feeds - crypto, tech/AI, and sports betting markets
+RSS_FEEDS: Dict[str, Dict[str, str]] = {
+    # Crypto feeds - Direct market impact
+    "coindesk": {
+        "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+        "domain": DOMAIN_CRYPTO,
+    },
+    "cointelegraph": {
+        "url": "https://cointelegraph.com/rss",
+        "domain": DOMAIN_CRYPTO,
+    },
+    "decrypt": {
+        "url": "https://decrypt.co/feed",
+        "domain": DOMAIN_CRYPTO,
+    },
+    "coinjournal": {
+        "url": "https://coinjournal.net/feed/",
+        "domain": DOMAIN_CRYPTO,
+    },
+    "blockworks": {
+        "url": "https://blockworks.co/feed",
+        "domain": DOMAIN_CRYPTO,
+    },
+
+    # Tech/AI feeds - Market-moving tech (IPOs, product launches, AI breakthroughs)
+    "techcrunch": {
+        "url": "https://techcrunch.com/feed/",
+        "domain": DOMAIN_TECH,
+    },
+    "mit_tech_review": {
+        "url": "https://www.technologyreview.com/feed/",
+        "domain": DOMAIN_TECH,
+    },
+    "verge_tech": {
+        "url": "https://www.theverge.com/rss/index.xml",
+        "domain": DOMAIN_TECH,
+    },
+    "ars_technica": {
+        "url": "https://feeds.arstechnica.com/arstechnica/index",
+        "domain": DOMAIN_TECH,
+    },
+
+    # Sports feeds - Sports betting markets
+    "the_athletic": {
+        "url": "https://theathletic.com/feeds/rss/news/",
+        "domain": DOMAIN_SPORTS,
+    },
+    "sports_illustrated": {
+        "url": "https://www.si.com/rss/si_topstories.rss",
+        "domain": DOMAIN_SPORTS,
+    },
+    "yahoo_sports": {
+        "url": "https://sports.yahoo.com/rss/",
+        "domain": DOMAIN_SPORTS,
+    },
 }
+
+# Disabled feeds (403 Forbidden / 404 Not Found / blocks bots):
+# - bitcoin_magazine: 403 Forbidden
+# - espn_nfl: 403 Forbidden
+# - nfl_news: Doesn't parse correctly
+# - bleacher_report: 404 Not Found
+#
+# To add more feeds, verify they work first:
+#   curl -I <feed_url>
+# Should return 200 OK, not 403/404
 
 MAX_FETCH_RETRIES = int(os.getenv("MAX_FETCH_RETRIES", "3"))
 FETCH_TIMEOUT = int(os.getenv("FETCH_TIMEOUT", "10"))
+
+
+def get_feeds_by_domain(domain: Optional[str] = None) -> Dict[str, str]:
+    """Get feeds filtered by domain. Returns {source: url} dict."""
+    result = {}
+    for source, config in RSS_FEEDS.items():
+        if domain is None or config["domain"] == domain:
+            result[source] = config["url"]
+    return result
+
+
+def get_source_domain(source: str) -> str:
+    """Get the domain for a source name."""
+    if source in RSS_FEEDS:
+        return RSS_FEEDS[source]["domain"]
+    return DOMAIN_GENERAL
 
 
 def fetch_feed(url: str, max_attempts: int = MAX_FETCH_RETRIES):
@@ -100,8 +179,11 @@ def update_feed_metadata(source: str, entry_count: int, inserted_count: int) -> 
             )
 
 
-def insert_event(entry, source: str, url: str) -> str:
-    """Insert a single event into the database. URL should already be canonicalized and checked."""
+def prepare_event_data(entry, source: str, url: str, domain: str) -> Tuple[uuid4, List]:
+    """
+    Prepare event data for insertion without actually inserting.
+    Returns (event_id, values_list) for batch insertion.
+    """
     event_id = uuid4()
 
     if hasattr(entry, "published_parsed") and entry.published_parsed:
@@ -120,6 +202,10 @@ def insert_event(entry, source: str, url: str) -> str:
     else:
         categories = []
 
+    # Add domain as a category for filtering
+    if domain and domain not in categories:
+        categories.append(domain)
+
     tags = list(categories)
 
     # Generate embedding
@@ -127,19 +213,6 @@ def insert_event(entry, source: str, url: str) -> str:
     embed_vector = embed_text(clean_text or title or summary)
     embed_literal = "[" + ",".join(str(x) for x in embed_vector) + "]"
 
-    cols = [
-        "id",
-        "timestamp",
-        "source",
-        "url",
-        "title",
-        "summary",
-        "raw_text",
-        "clean_text",
-        "categories",
-        "tags",
-        "embed",
-    ]
     values = [
         event_id,
         ts,
@@ -154,33 +227,112 @@ def insert_event(entry, source: str, url: str) -> str:
         embed_literal,
     ]
 
-    placeholders = ", ".join(["%s"] * len(cols))
-    colnames = ", ".join(cols)
+    return event_id, values
+
+
+def insert_events_batch(events_data: List[Tuple[uuid4, List]]) -> int:
+    """
+    Batch insert events into the database.
+
+    Args:
+        events_data: List of (event_id, values) tuples from prepare_event_data
+
+    Returns:
+        Number of successfully inserted events
+    """
+    if not events_data:
+        return 0
+
+    cols = [
+        "id",
+        "timestamp",
+        "source",
+        "url",
+        "title",
+        "summary",
+        "raw_text",
+        "clean_text",
+        "categories",
+        "tags",
+        "embed",
+    ]
+
+    from psycopg import sql
+
+    inserted = 0
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Use executemany for batch insert
+            query = sql.SQL("INSERT INTO events ({}) VALUES ({})").format(
+                sql.SQL(", ").join(sql.Identifier(col) for col in cols),
+                sql.SQL(", ").join(sql.Placeholder() * len(cols)),
+            )
+
+            try:
+                # Insert all at once
+                cur.executemany(query, [values for _, values in events_data])
+                inserted = len(events_data)
+                print(f"[ingest] ✓ Batch inserted {inserted} events")
+            except Exception as e:
+                print(f"[ingest] ✗ Batch insert failed: {e}")
+                # Fallback to individual inserts
+                for event_id, values in events_data:
+                    try:
+                        cur.execute(query, values)
+                        inserted += 1
+                    except Exception as inner_e:
+                        print(f"[ingest] ✗ Failed to insert {event_id}: {inner_e}")
+
+    return inserted
+
+
+def insert_event(entry, source: str, url: str, domain: str) -> str:
+    """Insert a single event into the database. URL should already be canonicalized and checked."""
+    event_id, values = prepare_event_data(entry, source, url, domain)
+
+    cols = [
+        "id",
+        "timestamp",
+        "source",
+        "url",
+        "title",
+        "summary",
+        "raw_text",
+        "clean_text",
+        "categories",
+        "tags",
+        "embed",
+    ]
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+            from psycopg import sql
             cur.execute(
-                f"INSERT INTO events ({colnames}) VALUES ({placeholders})",
+                sql.SQL("INSERT INTO events ({}) VALUES ({})").format(
+                    sql.SQL(", ").join(sql.Identifier(col) for col in cols),
+                    sql.SQL(", ").join(sql.Placeholder() * len(cols)),
+                ),
                 values,
             )
 
-    print(f"[ingest] ✓ Inserted event {event_id}")
+    print(f"[ingest] ✓ Inserted event {event_id} [{domain}]")
     return str(event_id)
 
 
-def ingest_feed(source: str, url: str, skip_recent: bool = False) -> Tuple[int, int]:
+def ingest_feed(source: str, url: str, domain: str, skip_recent: bool = False) -> Tuple[int, int]:
     """
     Ingest a single RSS feed with optimized batch duplicate checking.
 
     Args:
-        source: Source identifier (e.g., 'wired_ai')
+        source: Source identifier (e.g., 'coindesk')
         url: RSS feed URL
+        domain: Domain category (crypto, sports, tech, general)
         skip_recent: If True, skip entries older than last fetch time
 
     Returns:
         Tuple of (inserted_count, skipped_count)
     """
-    print(f"\n[ingest] Fetching {source}: {url}")
+    print(f"\n[ingest] Fetching {source} [{domain}]: {url}")
 
     try:
         feed = fetch_feed(url)
@@ -226,8 +378,8 @@ def ingest_feed(source: str, url: str, skip_recent: bool = False) -> Tuple[int, 
     existing_urls = get_existing_urls(urls_to_check)
     print(f"[ingest] Found {len(existing_urls)} existing URLs in database")
 
-    # Insert only new entries
-    inserted = 0
+    # Prepare new entries for batch insert
+    events_to_insert = []
     skipped = 0
 
     for entry, canonical_url in entries_to_process:
@@ -236,11 +388,14 @@ def ingest_feed(source: str, url: str, skip_recent: bool = False) -> Tuple[int, 
             continue
 
         try:
-            insert_event(entry, source, canonical_url)
-            inserted += 1
+            event_data = prepare_event_data(entry, source, canonical_url, domain)
+            events_to_insert.append(event_data)
         except Exception as e:
-            print(f"[ingest] ✗ Error inserting {canonical_url}: {e}")
+            print(f"[ingest] ✗ Error preparing {canonical_url}: {e}")
             skipped += 1
+
+    # Batch insert all new events
+    inserted = insert_events_batch(events_to_insert)
 
     # Update feed metadata
     update_feed_metadata(source, total_entries, inserted)
@@ -249,12 +404,12 @@ def ingest_feed(source: str, url: str, skip_recent: bool = False) -> Tuple[int, 
     return inserted, skipped
 
 
-def main(feeds: Dict[str, str] | None = None, skip_recent: bool = True):
+def main(feeds: Dict[str, Dict[str, str]] | None = None, skip_recent: bool = True):
     """
     Ingest all configured RSS feeds.
 
     Args:
-        feeds: Dictionary of {source: url}. Defaults to RSS_FEEDS.
+        feeds: Dictionary of {source: {url, domain}}. Defaults to RSS_FEEDS.
         skip_recent: If True, skip entries older than last fetch (much faster on subsequent runs)
     """
     if feeds is None:
@@ -268,8 +423,10 @@ def main(feeds: Dict[str, str] | None = None, skip_recent: bool = True):
     total_inserted = 0
     total_skipped = 0
 
-    for source, url in feeds.items():
-        inserted, skipped = ingest_feed(source, url, skip_recent=skip_recent)
+    for source, config in feeds.items():
+        url = config["url"] if isinstance(config, dict) else config
+        domain = config.get("domain", DOMAIN_GENERAL) if isinstance(config, dict) else DOMAIN_GENERAL
+        inserted, skipped = ingest_feed(source, url, domain, skip_recent=skip_recent)
         total_inserted += inserted
         total_skipped += skipped
 
@@ -278,6 +435,9 @@ def main(feeds: Dict[str, str] | None = None, skip_recent: bool = True):
     print(f"[ingest] Inserted: {total_inserted} new events")
     print(f"[ingest] Skipped:  {total_skipped} duplicates/old")
     print(f"{'='*60}\n")
+
+    # Update ingest status
+    update_ingest_status("rss_ingest", total_inserted)
 
 
 if __name__ == "__main__":

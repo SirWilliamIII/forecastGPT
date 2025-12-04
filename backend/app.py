@@ -34,8 +34,27 @@ TEAM_CONFIG = load_team_config()
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DISABLE_STARTUP_INGESTION = os.getenv("DISABLE_STARTUP_INGESTION", "false").lower() in ("true", "1", "yes")
-DISABLE_NFL_ELO_INGEST = os.getenv("DISABLE_NFL_ELO_INGEST", "false").lower() in ("true", "1", "yes")
+
+# Import configuration
+from config import (
+    DISABLE_STARTUP_INGESTION,
+    DISABLE_NFL_ELO_INGEST,
+    DISABLE_BAKER_PROJECTIONS,
+    RSS_INGEST_INTERVAL_HOURS,
+    CRYPTO_BACKFILL_INTERVAL_HOURS,
+    EQUITY_BACKFILL_INTERVAL_HOURS,
+    NFL_ELO_BACKFILL_INTERVAL_HOURS,
+    BAKER_PROJECTIONS_INTERVAL_HOURS,
+    API_MAX_EVENTS_LIMIT,
+    API_MAX_NEIGHBORS_LIMIT,
+    API_MAX_PROJECTIONS_LIMIT,
+    MIN_HORIZON_MINUTES,
+    MAX_HORIZON_MINUTES,
+    MIN_LOOKBACK_DAYS,
+    MAX_LOOKBACK_DAYS,
+    DEFAULT_HORIZON_MINUTES,
+    DEFAULT_LOOKBACK_DAYS,
+)
 
 app = FastAPI(title="BloombergGPT Semantic Backend")
 
@@ -122,12 +141,18 @@ def startup_event() -> None:
     run_nfl_elo_backfill()
     run_baker_projections()
 
-    # Schedule RSS every hour, crypto daily
-    scheduler.add_job(run_rss_ingest, "interval", hours=1, id="rss_ingest")
-    scheduler.add_job(run_crypto_backfill, "interval", hours=24, id="crypto_backfill")
-    scheduler.add_job(run_equity_backfill, "interval", hours=24, id="equity_backfill")
-    scheduler.add_job(run_nfl_elo_backfill, "interval", hours=24, id="nfl_elo_backfill")
-    scheduler.add_job(run_baker_projections, "interval", hours=1, id="baker_projections")
+    # Schedule jobs with configurable intervals
+    scheduler.add_job(run_rss_ingest, "interval", hours=RSS_INGEST_INTERVAL_HOURS, id="rss_ingest")
+    scheduler.add_job(run_crypto_backfill, "interval", hours=CRYPTO_BACKFILL_INTERVAL_HOURS, id="crypto_backfill")
+    scheduler.add_job(run_equity_backfill, "interval", hours=EQUITY_BACKFILL_INTERVAL_HOURS, id="equity_backfill")
+
+    # Only schedule NFL Elo job if not disabled
+    if not DISABLE_NFL_ELO_INGEST:
+        scheduler.add_job(run_nfl_elo_backfill, "interval", hours=NFL_ELO_BACKFILL_INTERVAL_HOURS, id="nfl_elo_backfill")
+    else:
+        print("[scheduler] NFL Elo backfill job not scheduled (DISABLE_NFL_ELO_INGEST=true)")
+
+    scheduler.add_job(run_baker_projections, "interval", hours=BAKER_PROJECTIONS_INTERVAL_HOURS, id="baker_projections")
     scheduler.start()
     print(
         "[scheduler] ✓ Started background ingestion scheduler "
@@ -431,11 +456,13 @@ def create_event(event: EventCreate) -> Dict[str, str]:
 
 @app.get("/events/recent", response_model=List[EventSummary])
 def get_recent_events(
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=API_MAX_EVENTS_LIMIT),
     source: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None, description="Filter by domain: crypto, sports, tech, general"),
 ) -> List[EventSummary]:
     """
-    Fetch recent events, optionally filtered by source.
+    Fetch recent events, optionally filtered by source or domain.
+    Domain is stored in the categories array.
     Returns newest first.
     """
     with get_conn() as conn:
@@ -450,6 +477,17 @@ def get_recent_events(
                     LIMIT %s
                     """,
                     (source, int(limit)),
+                )
+            elif domain is not None:
+                cur.execute(
+                    """
+                    SELECT id, timestamp, source, url, title, summary, categories, tags
+                    FROM events
+                    WHERE %s = ANY(categories)
+                    ORDER BY timestamp DESC
+                    LIMIT %s
+                    """,
+                    (domain, int(limit)),
                 )
             else:
                 cur.execute(
@@ -479,7 +517,10 @@ def get_recent_events(
 
 
 @app.get("/events/{event_id}/similar")
-def get_similar_events(event_id: UUID, limit: int = 10) -> Dict[str, Any]:
+def get_similar_events(
+    event_id: UUID,
+    limit: int = Query(default=10, ge=1, le=API_MAX_NEIGHBORS_LIMIT)
+) -> Dict[str, Any]:
     """
     Return nearest neighbors in embedding space for a given event_id.
     """
@@ -555,15 +596,29 @@ def get_similar_events(event_id: UUID, limit: int = 10) -> Dict[str, Any]:
 
 @app.get("/forecast/asset", response_model=AssetForecastOut)
 def forecast_asset_endpoint(
-    symbol: str = Query(..., description="e.g. BTC-USD"),
-    horizon_minutes: int = Query(1440, description="Forecast horizon in minutes"),
-    lookback_days: int = Query(60, description="Lookback window for features"),
+    symbol: str = Query(..., description="e.g. BTC-USD", min_length=1, max_length=50),
+    horizon_minutes: int = Query(
+        DEFAULT_HORIZON_MINUTES,
+        description="Forecast horizon in minutes",
+        ge=MIN_HORIZON_MINUTES,
+        le=MAX_HORIZON_MINUTES
+    ),
+    lookback_days: int = Query(
+        DEFAULT_LOOKBACK_DAYS,
+        description="Lookback window for features",
+        ge=MIN_LOOKBACK_DAYS,
+        le=MAX_LOOKBACK_DAYS
+    ),
 ) -> AssetForecastOut:
     """
     Numeric baseline forecaster for a given asset symbol.
 
     Example:
       GET /forecast/asset?symbol=BTC-USD&horizon_minutes=1440&lookback_days=60
+
+    Validation:
+      - horizon_minutes: 1 to 43200 (30 days)
+      - lookback_days: 1 to 730 (2 years)
     """
     as_of = datetime.now(tz=timezone.utc)
 
@@ -591,12 +646,16 @@ def forecast_asset_endpoint(
 @app.get("/forecast/event/{event_id}", response_model=EventReturnForecastOut)
 def forecast_event_endpoint(
     event_id: UUID,
-    symbol: str,
-    horizon_minutes: int = 1440,
-    k_neighbors: int = 25,
-    lookback_days: int = 365,
-    price_window_minutes: int = 60,
-    alpha: float = 0.5,
+    symbol: str = Query(..., min_length=1, max_length=50),
+    horizon_minutes: int = Query(
+        DEFAULT_HORIZON_MINUTES,
+        ge=MIN_HORIZON_MINUTES,
+        le=MAX_HORIZON_MINUTES
+    ),
+    k_neighbors: int = Query(default=25, ge=1, le=100),
+    lookback_days: int = Query(default=365, ge=MIN_LOOKBACK_DAYS, le=MAX_LOOKBACK_DAYS),
+    price_window_minutes: int = Query(default=60, ge=1, le=1440),
+    alpha: float = Query(default=0.5, ge=0.0, le=10.0),
 ) -> EventReturnForecastOut:
     """
     Event-based forecaster.
@@ -636,9 +695,9 @@ def forecast_event_endpoint(
 
 @app.get("/projections/latest", response_model=List[ProjectionOut])
 def get_latest_projections_endpoint(
-    symbol: str = Query(..., description="Target ID, e.g., NFL:KC_CHIEFS"),
-    metric: str = Query("win_prob", description="Projection metric, e.g., win_prob"),
-    limit: int = Query(5, ge=1, le=50, description="Max rows to return"),
+    symbol: str = Query(..., description="Target ID, e.g., NFL:KC_CHIEFS", min_length=1, max_length=100),
+    metric: str = Query("win_prob", description="Projection metric, e.g., win_prob", min_length=1, max_length=50),
+    limit: int = Query(5, ge=1, le=API_MAX_PROJECTIONS_LIMIT, description="Max rows to return"),
 ) -> List[ProjectionOut]:
     rows = get_latest_projections(symbol=symbol, metric=metric, limit=limit)
     if not rows:
@@ -671,6 +730,89 @@ def get_projection_teams() -> Dict[str, str]:
     Sourced from BAKER_TEAM_MAP env or defaults.
     """
     return TEAM_CONFIG
+
+
+@app.get("/symbols/available")
+def get_available_symbols() -> Dict[str, Any]:
+    """
+    Return all available symbols for forecasting, grouped by type.
+    This allows the frontend to dynamically discover available assets.
+    """
+    from config import get_crypto_symbols, get_equity_symbols, get_all_symbols
+
+    return {
+        "all": get_all_symbols(),
+        "crypto": list(get_crypto_symbols().keys()),
+        "equity": list(get_equity_symbols().keys()),
+    }
+
+
+@app.get("/horizons/available")
+def get_available_horizons() -> List[Dict[str, Any]]:
+    """
+    Return available forecast horizons.
+
+    Currently only 24h (1440 minutes) has training data.
+    This endpoint allows the frontend to dynamically discover capabilities.
+    """
+    # Query database to check which horizons have data
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT horizon_minutes
+                FROM asset_returns
+                ORDER BY horizon_minutes
+                """
+            )
+            rows = cur.fetchall()
+
+    available_horizons = []
+    for row in rows:
+        minutes = row["horizon_minutes"]
+        if minutes == 60:
+            label = "1 hour"
+        elif minutes == 1440:
+            label = "24 hours"
+        elif minutes == 10080:
+            label = "1 week"
+        elif minutes == 43200:
+            label = "30 days"
+        else:
+            hours = minutes / 60
+            label = f"{hours:.1f} hours" if hours < 24 else f"{minutes // 1440} days"
+
+        available_horizons.append({
+            "value": minutes,
+            "label": label,
+            "available": True,
+        })
+
+    return available_horizons
+
+
+@app.get("/sources/available")
+def get_available_sources() -> List[Dict[str, str]]:
+    """
+    Return all RSS sources that have been ingested.
+    This allows the frontend to dynamically populate source filters.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT source, COUNT(*) as count
+                FROM events
+                GROUP BY source
+                ORDER BY count DESC
+                """
+            )
+            rows = cur.fetchall()
+
+    return [
+        {"value": row["source"], "label": row["source"].replace("_", " ").title(), "count": row["count"]}
+        for row in rows
+    ]
 
 
 # ---------------------------------------------------------------------

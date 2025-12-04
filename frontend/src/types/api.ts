@@ -83,11 +83,28 @@ export interface Projection {
   meta?: Record<string, unknown>;
 }
 
-export const SYMBOLS = ["BTC-USD", "ETH-USD", "XMR-USD"] as const;
-export type Symbol = (typeof SYMBOLS)[number];
+// Domain configuration - extensible to any target type
+export type TargetDomain = "crypto" | "sports" | "equities" | "custom";
 
+export interface TargetConfig {
+  id: string;
+  label: string;
+  domain: TargetDomain;
+  color: string;
+}
+
+// Current crypto symbols (extensible)
+export const CRYPTO_SYMBOLS = ["BTC-USD", "ETH-USD", "XMR-USD"] as const;
+export type CryptoSymbol = (typeof CRYPTO_SYMBOLS)[number];
+
+// For backward compatibility
+export const SYMBOLS = CRYPTO_SYMBOLS;
+export type Symbol = CryptoSymbol;
+
+// Horizons with data availability
+// Currently only 24h has training data; others are placeholders for future expansion
 export const HORIZONS = [
-  { value: 60, label: "1 hour" },
-  { value: 240, label: "4 hours" },
-  { value: 1440, label: "24 hours" },
+  { value: 1440, label: "24 hours", available: true },
+  { value: 60, label: "1 hour", available: false },
+  { value: 10080, label: "1 week", available: false },
 ] as const;

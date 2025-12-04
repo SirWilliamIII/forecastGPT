@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, List
 
 from db import get_conn
 from signals.feature_extractor import build_features
+from config import FORECAST_DIRECTION_THRESHOLD, FORECAST_CONFIDENCE_SCALE
 
 
 @dataclass
@@ -79,9 +80,17 @@ def forecast_asset(
     - confidence = squashed signal-to-noise ratio
 
     Uses the unified feature extractor so we can later swap in ML.
+
+    Args:
+        symbol: Asset symbol to forecast
+        as_of: Reference time (must be timezone-aware UTC)
+        horizon_minutes: Forecast horizon
+        lookback_days: Historical lookback window
     """
     if as_of is None:
         as_of = datetime.now(tz=timezone.utc)
+    elif as_of.tzinfo is None:
+        raise ValueError("as_of must be timezone-aware (use datetime.now(tz=timezone.utc))")
 
     rets = _fetch_recent_returns(symbol, as_of, horizon_minutes, lookback_days)
     n = len(rets)
@@ -110,9 +119,10 @@ def forecast_asset(
     expected = mu
 
     # direction with a small deadzone to avoid flip-flopping on noise
-    if expected > 0.0005:
+    threshold = FORECAST_DIRECTION_THRESHOLD
+    if expected > threshold:
         direction = "up"
-    elif expected < -0.0005:
+    elif expected < -threshold:
         direction = "down"
     else:
         direction = "flat"
@@ -124,7 +134,7 @@ def forecast_asset(
         raw_score = abs(expected) / (sigma + 1e-8)
 
     # squash: assume raw_score ~ 0–2 typical, cap at 1.0
-    confidence = max(0.0, min(1.0, raw_score / 2.0))
+    confidence = max(0.0, min(1.0, raw_score / FORECAST_CONFIDENCE_SCALE))
 
     feats = build_features(symbol, as_of, horizon_minutes, lookback_days)
 

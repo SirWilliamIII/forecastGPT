@@ -33,16 +33,22 @@ export default function EventDetailPage({
   const { data: similarEvents, isLoading: neighborsLoading } = useQuery({
     queryKey: ["similar", eventId],
     queryFn: () => getSimilarEvents(eventId, 5),
+    staleTime: 30 * 60 * 1000, // 30 minutes - similar events rarely change
+    gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
   });
 
   const { data: eventForecast, isLoading: eventForecastLoading } = useQuery({
     queryKey: ["eventForecast", eventId, symbol],
     queryFn: () => getEventForecast(eventId, symbol),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 15 * 60 * 1000, // Keep in cache for 15 minutes
   });
 
   const { data: baselineForecast } = useQuery({
     queryKey: ["baseline", symbol],
     queryFn: () => getAssetForecast(symbol),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 15 * 60 * 1000, // Keep in cache for 15 minutes
   });
 
   return (

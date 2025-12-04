@@ -80,16 +80,31 @@ start_db() {
 cleanup() {
     echo ""
     warn "Shutting down..."
-    
-    # Kill background processes
+
+    # Kill backend process and its children
     if [[ -n "${BACKEND_PID:-}" ]]; then
-        kill $BACKEND_PID 2>/dev/null || true
+        log "Stopping backend (PID: $BACKEND_PID)..."
+        # Kill process group to get child processes too
+        kill -TERM -$BACKEND_PID 2>/dev/null || kill $BACKEND_PID 2>/dev/null || true
+        # Wait a moment for graceful shutdown
+        sleep 1
+        # Force kill if still running
+        kill -9 -$BACKEND_PID 2>/dev/null || kill -9 $BACKEND_PID 2>/dev/null || true
     fi
+
+    # Kill frontend process and its children
     if [[ -n "${FRONTEND_PID:-}" ]]; then
-        kill $FRONTEND_PID 2>/dev/null || true
+        log "Stopping frontend (PID: $FRONTEND_PID)..."
+        # Kill process group to get child processes too
+        kill -TERM -$FRONTEND_PID 2>/dev/null || kill $FRONTEND_PID 2>/dev/null || true
+        # Wait a moment for graceful shutdown
+        sleep 1
+        # Force kill if still running
+        kill -9 -$FRONTEND_PID 2>/dev/null || kill -9 $FRONTEND_PID 2>/dev/null || true
     fi
-    
+
     success "Stopped all processes. Database container still running."
+    success "To stop database: $COMPOSE_CMD down"
     exit 0
 }
 
@@ -108,17 +123,39 @@ start_db
 # Step 2: Start backend
 log "Starting backend server..."
 
+cd "$SCRIPT_DIR/backend"
+
+# Check for required environment variables
+if [ ! -f ".env" ]; then
+    warn "No backend/.env file found. Creating minimal .env..."
+    cat > .env << 'EOF'
+# Minimal configuration for development
+# Set DISABLE_STARTUP_INGESTION=true to skip RSS ingestion on every restart
+DISABLE_STARTUP_INGESTION=true
+
+# Add your OpenAI API key here (required for embeddings)
+# OPENAI_API_KEY=sk-...
+EOF
+    warn "Created backend/.env - please add OPENAI_API_KEY before running ingestion"
+fi
+
+# Check if OPENAI_API_KEY is set (warn but don't fail)
+if ! grep -q "^OPENAI_API_KEY=sk-" .env 2>/dev/null; then
+    warn "⚠️  OPENAI_API_KEY not configured in backend/.env"
+    warn "   The server will start, but embeddings will use local stubs"
+    warn "   Add your key to backend/.env: OPENAI_API_KEY=sk-..."
+fi
+
 # Clear inherited venv to prevent conflicts with uv
 unset VIRTUAL_ENV
 
-cd "$SCRIPT_DIR/backend"
-
-# Sync dependencies (UV_PROJECT_ENVIRONMENT=.venv set in .zprofile)
+# Sync dependencies
+log "Syncing backend dependencies..."
 uv sync --quiet
 
 # Backfill crypto prices if asset_returns table is empty
 log "Checking crypto price data..."
-PRICE_COUNT=$(podman exec semantic_db psql -U semantic -d semantic_markets -t -c "SELECT COUNT(*) FROM asset_returns;" 2>/dev/null | tr -d ' ')
+PRICE_COUNT=$($CONTAINER_CMD exec semantic_db psql -U semantic -d semantic_markets -t -c "SELECT COUNT(*) FROM asset_returns;" 2>/dev/null | tr -d ' ')
 if [[ "$PRICE_COUNT" == "0" || -z "$PRICE_COUNT" ]]; then
     log "Backfilling crypto prices (first run)..."
     uv run python -m ingest.backfill_crypto_returns 2>&1 | grep -E "^\[backfill\]" || true
@@ -128,8 +165,11 @@ else
 fi
 
 # Start uvicorn in background (RSS ingest runs on startup via scheduler)
-uv run --isolated uvicorn app:app --reload --host 127.0.0.1 --port 9000 &
+# Use setsid to create new process group so we can kill all children
+set -m  # Enable job control
+uv run uvicorn app:app --reload --host 127.0.0.1 --port 9000 &
 BACKEND_PID=$!
+set +m  # Disable job control
 
 # Wait a moment for backend to start
 sleep 2
@@ -145,6 +185,20 @@ success "Backend running at http://localhost:9000"
 log "Starting frontend server..."
 cd "$SCRIPT_DIR/frontend"
 
+# Check for frontend .env.local
+if [ ! -f ".env.local" ]; then
+    log "Creating frontend/.env.local with ngrok tunnel..."
+    cat > .env.local << 'EOF'
+# Frontend environment configuration
+# Backend API URL - using ngrok tunnel for external access
+NEXT_PUBLIC_API_URL=https://will-node.ngrok.dev
+
+# For local development only, use:
+# NEXT_PUBLIC_API_URL=http://localhost:9000
+EOF
+    success "Created frontend/.env.local with ngrok URL"
+fi
+
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
     log "Installing frontend dependencies..."
@@ -152,8 +206,11 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Start Next.js in background
+# Use setsid to create new process group so we can kill all children
+set -m  # Enable job control
 npm run dev &
 FRONTEND_PID=$!
+set +m  # Disable job control
 
 sleep 3
 
@@ -177,5 +234,23 @@ echo ""
 echo -e "Press ${YELLOW}Ctrl+C${NC} to stop all services"
 echo ""
 
-# Wait for processes
-wait $BACKEND_PID $FRONTEND_PID
+# Keep script running and monitor processes
+# If either dies, trigger cleanup
+while true; do
+    # Check if backend is still running
+    if ! kill -0 $BACKEND_PID 2>/dev/null; then
+        error "Backend process died unexpectedly"
+        cleanup
+        exit 1
+    fi
+
+    # Check if frontend is still running
+    if ! kill -0 $FRONTEND_PID 2>/dev/null; then
+        error "Frontend process died unexpectedly"
+        cleanup
+        exit 1
+    fi
+
+    # Sleep to avoid busy waiting
+    sleep 2
+done

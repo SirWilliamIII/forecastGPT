@@ -33,13 +33,18 @@ export async function getHealth(): Promise<HealthCheck> {
   return fetchJson<HealthCheck>(`${API_BASE}/health`);
 }
 
+// Event domains
+export type EventDomain = "crypto" | "sports" | "tech" | "general";
+
 // Events
 export async function getRecentEvents(
   limit = 50,
-  source?: string
+  source?: string,
+  domain?: EventDomain
 ): Promise<EventSummary[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (source) params.set("source", source);
+  if (domain) params.set("domain", domain);
   return fetchJson<EventSummary[]>(`${API_BASE}/events/recent?${params}`);
 }
 
@@ -109,4 +114,35 @@ export async function getLatestProjections(
 
 export async function getProjectionTeams(): Promise<Record<string, string>> {
   return fetchJson<Record<string, string>>(`${API_BASE}/projections/teams`);
+}
+
+// Dynamic discovery endpoints
+export interface AvailableSymbols {
+  all: string[];
+  crypto: string[];
+  equity: string[];
+}
+
+export interface AvailableHorizon {
+  value: number;
+  label: string;
+  available: boolean;
+}
+
+export interface AvailableSource {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export async function getAvailableSymbols(): Promise<AvailableSymbols> {
+  return fetchJson<AvailableSymbols>(`${API_BASE}/symbols/available`);
+}
+
+export async function getAvailableHorizons(): Promise<AvailableHorizon[]> {
+  return fetchJson<AvailableHorizon[]>(`${API_BASE}/horizons/available`);
+}
+
+export async function getAvailableSources(): Promise<AvailableSource[]> {
+  return fetchJson<AvailableSource[]>(`${API_BASE}/sources/available`);
 }

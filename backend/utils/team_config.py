@@ -7,6 +7,10 @@ from typing import Dict
 DEFAULT_TEAM_MAP = {
     "KC": "NFL:KC_CHIEFS",
     "DAL": "NFL:DAL_COWBOYS",
+    "SF": "NFL:SF_49ERS",
+    "PHI": "NFL:PHI_EAGLES",
+    "BUF": "NFL:BUF_BILLS",
+    "DET": "NFL:DET_LIONS",
 }
 
 

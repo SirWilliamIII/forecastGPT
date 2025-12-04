@@ -19,6 +19,8 @@ export default function EventsPage() {
   const { data: events, isLoading } = useQuery({
     queryKey: ["events", source, limit],
     queryFn: () => getRecentEvents(limit, source || undefined),
+    staleTime: 3 * 60 * 1000, // 3 minutes
+    gcTime: 20 * 60 * 1000, // Keep in cache for 20 minutes
   });
 
   return (

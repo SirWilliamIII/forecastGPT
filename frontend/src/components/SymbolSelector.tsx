@@ -1,23 +1,51 @@
 "use client";
 
-import { SYMBOLS, type Symbol } from "@/types/api";
-
 interface SymbolSelectorProps {
-  value: Symbol;
-  onChange: (symbol: Symbol) => void;
+  value: string;
+  onChange: (symbol: string) => void;
+  availableSymbols?: string[];
 }
 
-const SYMBOL_INFO: Record<Symbol, { name: string; color: string }> = {
-  "BTC-USD": { name: "Bitcoin", color: "bg-orange-500" },
-  "ETH-USD": { name: "Ethereum", color: "bg-blue-500" },
-  "XMR-USD": { name: "Monero", color: "bg-gray-500" },
-};
+// Default symbol info with common crypto/equity patterns
+function getSymbolInfo(symbol: string): { name: string; color: string } {
+  // Crypto patterns
+  if (symbol.includes("-USD")) {
+    const asset = symbol.replace("-USD", "");
+    const colors: Record<string, string> = {
+      BTC: "bg-orange-500",
+      ETH: "bg-purple-500",
+      XMR: "bg-gray-500",
+      SOL: "bg-cyan-500",
+      AVAX: "bg-red-500",
+    };
+    return {
+      name: asset,
+      color: colors[asset] || "bg-blue-500",
+    };
+  }
 
-export function SymbolSelector({ value, onChange }: SymbolSelectorProps) {
+  // Equity patterns
+  if (symbol.match(/^[A-Z]{1,5}$/)) {
+    return {
+      name: symbol,
+      color: "bg-emerald-500",
+    };
+  }
+
+  // Default
+  return {
+    name: symbol,
+    color: "bg-gray-500",
+  };
+}
+
+export function SymbolSelector({ value, onChange, availableSymbols = [] }: SymbolSelectorProps) {
+  const symbols = availableSymbols.length > 0 ? availableSymbols : [value];
+
   return (
     <div className="flex gap-2">
-      {SYMBOLS.map((symbol) => {
-        const info = SYMBOL_INFO[symbol];
+      {symbols.map((symbol) => {
+        const info = getSymbolInfo(symbol);
         const isActive = value === symbol;
 
         return (
@@ -31,7 +59,7 @@ export function SymbolSelector({ value, onChange }: SymbolSelectorProps) {
             }`}
           >
             <span className={`h-2 w-2 rounded-full ${info.color}`} />
-            <span>{symbol.replace("-USD", "")}</span>
+            <span>{info.name}</span>
           </button>
         );
       })}

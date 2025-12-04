@@ -72,12 +72,13 @@ SELECT
     r.realized_return,
     r.price_start,
     r.price_end,
-    -- simple event context: how many events in last 24 hours
+    -- IMPORTANT: Only count events BEFORE as_of to prevent lookahead bias
+    -- Using < instead of <= to strictly enforce temporal ordering
     (
         SELECT COUNT(*)
         FROM events e
-        WHERE e.timestamp > r.as_of - INTERVAL '1 day'
-          AND e.timestamp <= r.as_of
+        WHERE e.timestamp >= r.as_of - INTERVAL '1 day'
+          AND e.timestamp < r.as_of
     ) AS event_count_1d
 FROM asset_returns r
 WHERE r.horizon_minutes = %(horizon)s
@@ -177,25 +178,34 @@ y = df_model[target_col].astype(float)
 X.head(), y.head()
 
 # %% [markdown]
-# ## 5. Train / test split (time-based)
+# ## 5. Train / test split (time-based, per-symbol)
 #
-# Use the earliest 80% of observations as train, last 20% as test, **per time**.
+# CRITICAL: Split per symbol to prevent data leakage across assets.
+# Use the earliest 80% of observations as train, last 20% as test, **per symbol**.
+# This ensures we respect temporal ordering within each asset.
 
 # %%
-# Sort by time globally for stability
-df_model_sorted = df_model.sort_values("as_of").reset_index(drop=True)
-X_sorted = df_model_sorted[feature_cols].astype(float)
-y_sorted = df_model_sorted[target_col].astype(float)
+# Time-based split per symbol to prevent leakage
+train_dfs = []
+test_dfs = []
 
-n = len(df_model_sorted)
-n_train = int(n * 0.8)
+for symbol in df_model["symbol"].unique():
+    df_sym = df_model[df_model["symbol"] == symbol].sort_values("as_of").reset_index(drop=True)
+    n_sym = len(df_sym)
+    n_train_sym = int(n_sym * 0.8)
 
-X_train = X_sorted.iloc[:n_train]
-y_train = y_sorted.iloc[:n_train]
-X_test = X_sorted.iloc[n_train:]
-y_test = y_sorted.iloc[n_train:]
+    train_dfs.append(df_sym.iloc[:n_train_sym])
+    test_dfs.append(df_sym.iloc[n_train_sym:])
 
-n, n_train, len(X_test)
+df_train = pd.concat(train_dfs, ignore_index=True)
+df_test = pd.concat(test_dfs, ignore_index=True)
+
+X_train = df_train[feature_cols].astype(float)
+y_train = df_train[target_col].astype(float)
+X_test = df_test[feature_cols].astype(float)
+y_test = df_test[target_col].astype(float)
+
+len(df_train), len(df_test), df_train["symbol"].value_counts()
 
 # %% [markdown]
 # ## 6. Train RandomForestRegressor
@@ -246,14 +256,21 @@ metrics
 # ## 8. Inspect per-symbol performance (optional)
 
 # %%
-df_eval = df_model_sorted.iloc[n_train:].copy()
+df_eval = df_test.copy()
 df_eval["y_true"] = y_test.values
 df_eval["y_pred"] = y_pred
 df_eval["sign_true"] = np.sign(df_eval["y_true"])
 df_eval["sign_pred"] = np.sign(df_eval["y_pred"])
 df_eval["direction_correct"] = df_eval["sign_true"] == df_eval["sign_pred"]
 
-df_eval.groupby("symbol")["direction_correct"].mean()
+print("Per-symbol directional accuracy:")
+print(df_eval.groupby("symbol")["direction_correct"].mean())
+
+print("\nPer-symbol MAE:")
+df_eval_grouped = df_eval.groupby("symbol").apply(
+    lambda g: mean_absolute_error(g["y_true"], g["y_pred"])
+)
+print(df_eval_grouped)
 
 # %% [markdown]
 # ## 9. Save the trained model
@@ -264,6 +281,7 @@ df_eval.groupby("symbol")["direction_correct"].mean()
 # so the runtime forecaster can later load it.
 
 # %%
+import json
 from pathlib import Path
 import joblib
 
@@ -281,6 +299,57 @@ joblib.dump(
     model_path,
 )
 
+# Save metadata JSON
+metadata = {
+    "model_name": "asset_return_rf",
+    "model_type": "RandomForestRegressor",
+    "description": "Baseline ML forecaster for asset returns using lagged returns, rolling stats, and event count features",
+    "trained_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "feature_version": "v1",
+    "symbols": symbols,
+    "metrics": ["return"],
+    "horizons_minutes": [horizon_minutes],
+    "feature_cols": feature_cols,
+    "hyperparameters": {
+        "n_estimators": 300,
+        "max_depth": 8,
+        "min_samples_leaf": 5,
+        "random_state": 42,
+    },
+    "train_test_split": {
+        "method": "time_based_per_symbol",
+        "train_ratio": 0.8,
+        "shuffle": False,
+        "n_train": int(len(X_train)),
+        "n_test": int(len(X_test)),
+        "train_date_range": [
+            str(df_train["as_of"].min().date()),
+            str(df_train["as_of"].max().date()),
+        ],
+        "test_date_range": [
+            str(df_test["as_of"].min().date()),
+            str(df_test["as_of"].max().date()),
+        ],
+    },
+    "metrics_eval": {
+        "mae": float(mae),
+        "rmse": float(rmse),
+        "directional_accuracy": float(direction_acc),
+    },
+    "notes": [
+        "Model trained on 1-day horizon returns",
+        "One-hot encoding used for symbol",
+        "Features use strict lookahead prevention (lag >= 1)",
+        "To retrain, run: uv run python -m notebooks.asset_forecaster_training",
+    ],
+}
+
+metadata_path = models_dir / "asset_return_rf.json"
+with open(metadata_path, "w") as f:
+    json.dump(metadata, f, indent=2)
+
+print(f"Model saved to: {model_path}")
+print(f"Metadata saved to: {metadata_path}")
 model_path
 
 # %% [markdown]

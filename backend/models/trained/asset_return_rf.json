@@ -1,0 +1,51 @@
+{
+  "model_name": "asset_return_rf",
+  "model_type": "RandomForestRegressor",
+  "description": "Baseline ML forecaster for asset returns using lagged returns, rolling stats, and event count features",
+  "trained_at": "2025-12-04T00:00:00Z",
+  "feature_version": "v1",
+  "symbols": ["BTC-USD", "ETH-USD", "XMR-USD"],
+  "metrics": ["return"],
+  "horizons_minutes": [1440],
+  "feature_cols": [
+    "horizon_minutes",
+    "price_start",
+    "price_end",
+    "event_count_1d",
+    "ret_lag1",
+    "ret_lag2",
+    "ret_lag3",
+    "ma_5",
+    "ma_10",
+    "vol_5",
+    "vol_10",
+    "symbol_BTC-USD",
+    "symbol_ETH-USD",
+    "symbol_XMR-USD"
+  ],
+  "hyperparameters": {
+    "n_estimators": 300,
+    "max_depth": 8,
+    "min_samples_leaf": 5,
+    "random_state": 42
+  },
+  "train_test_split": {
+    "method": "time_based",
+    "train_ratio": 0.8,
+    "shuffle": false
+  },
+  "metrics_eval": {
+    "note": "Run training notebook to populate actual metrics",
+    "placeholder": {
+      "mae": null,
+      "rmse": null,
+      "directional_accuracy": null
+    }
+  },
+  "notes": [
+    "Model trained on 1-day horizon returns",
+    "One-hot encoding used for symbol",
+    "Features use strict lookahead prevention (lag >= 1)",
+    "To retrain, run: uv run python -m notebooks.asset_forecaster_training"
+  ]
+}

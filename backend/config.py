@@ -1,0 +1,135 @@
+# backend/config.py
+"""
+Centralized configuration for the BloombergGPT backend.
+
+All magic numbers, thresholds, and tunable parameters should be defined here
+to improve maintainability and prevent scattered hardcoded values.
+"""
+
+import os
+from typing import Dict, List
+
+# ═══════════════════════════════════════════════════════════════════════
+# Database Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+DB_POOL_MIN_SIZE = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
+DB_POOL_MAX_SIZE = int(os.getenv("DB_POOL_MAX_SIZE", "10"))
+DB_POOL_TIMEOUT = float(os.getenv("DB_POOL_TIMEOUT", "5.0"))
+
+# ═══════════════════════════════════════════════════════════════════════
+# Embeddings Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "3072"))
+OPENAI_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+OPENAI_TIMEOUT = float(os.getenv("OPENAI_EMBED_TIMEOUT", "15.0"))
+MAX_EMBED_RETRIES = int(os.getenv("MAX_EMBED_RETRIES", "3"))
+
+# ═══════════════════════════════════════════════════════════════════════
+# Forecasting Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+# Naive forecaster thresholds
+FORECAST_DIRECTION_THRESHOLD = float(os.getenv("FORECAST_DIRECTION_THRESHOLD", "0.0005"))
+FORECAST_CONFIDENCE_SCALE = float(os.getenv("FORECAST_CONFIDENCE_SCALE", "2.0"))
+
+# Event forecaster parameters
+EVENT_FORECAST_DEFAULT_K_NEIGHBORS = int(os.getenv("EVENT_FORECAST_K_NEIGHBORS", "25"))
+EVENT_FORECAST_DEFAULT_ALPHA = float(os.getenv("EVENT_FORECAST_ALPHA", "0.5"))
+EVENT_FORECAST_DEFAULT_LOOKBACK_DAYS = int(os.getenv("EVENT_FORECAST_LOOKBACK_DAYS", "365"))
+EVENT_FORECAST_PRICE_WINDOW_MINUTES = int(os.getenv("EVENT_FORECAST_PRICE_WINDOW", "60"))
+
+# Default horizons (in minutes)
+DEFAULT_HORIZON_MINUTES = int(os.getenv("DEFAULT_HORIZON_MINUTES", "1440"))  # 24 hours
+DEFAULT_LOOKBACK_DAYS = int(os.getenv("DEFAULT_LOOKBACK_DAYS", "60"))
+
+# ═══════════════════════════════════════════════════════════════════════
+# Ingestion Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+MAX_FETCH_RETRIES = int(os.getenv("MAX_FETCH_RETRIES", "3"))
+FETCH_TIMEOUT = int(os.getenv("FETCH_TIMEOUT", "10"))
+MAX_DOWNLOAD_RETRIES = int(os.getenv("MAX_DOWNLOAD_RETRIES", "3"))
+
+# Scheduler intervals (in hours)
+RSS_INGEST_INTERVAL_HOURS = int(os.getenv("RSS_INGEST_INTERVAL_HOURS", "1"))
+CRYPTO_BACKFILL_INTERVAL_HOURS = int(os.getenv("CRYPTO_BACKFILL_INTERVAL_HOURS", "24"))
+EQUITY_BACKFILL_INTERVAL_HOURS = int(os.getenv("EQUITY_BACKFILL_INTERVAL_HOURS", "24"))
+NFL_ELO_BACKFILL_INTERVAL_HOURS = int(os.getenv("NFL_ELO_BACKFILL_INTERVAL_HOURS", "24"))
+BAKER_PROJECTIONS_INTERVAL_HOURS = int(os.getenv("BAKER_PROJECTIONS_INTERVAL_HOURS", "1"))
+
+# ═══════════════════════════════════════════════════════════════════════
+# Asset Symbol Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+def get_crypto_symbols() -> Dict[str, str]:
+    """
+    Get crypto symbol mappings from env or defaults.
+    Format: BTC-USD:BTC-USD,ETH-USD:ETH-USD,...
+    """
+    raw = os.getenv("CRYPTO_SYMBOLS")
+    if raw:
+        symbols = {}
+        for pair in raw.split(","):
+            if ":" in pair:
+                key, value = pair.split(":", 1)
+                symbols[key.strip()] = value.strip()
+        return symbols
+
+    # Default crypto symbols
+    return {
+        "BTC-USD": "BTC-USD",
+        "ETH-USD": "ETH-USD",
+        "XMR-USD": "XMR-USD",
+    }
+
+
+def get_equity_symbols() -> Dict[str, str]:
+    """
+    Get equity symbol mappings from env or defaults.
+    Format: NVDA:NVDA,AAPL:AAPL,...
+    """
+    raw = os.getenv("EQUITY_SYMBOLS")
+    if raw:
+        symbols = {}
+        for pair in raw.split(","):
+            if ":" in pair:
+                key, value = pair.split(":", 1)
+                symbols[key.strip()] = value.strip()
+        return symbols
+
+    # Default equity symbols
+    return {
+        "NVDA": "NVDA",
+    }
+
+
+def get_all_symbols() -> List[str]:
+    """Get all configured symbols (crypto + equity)."""
+    crypto = list(get_crypto_symbols().keys())
+    equity = list(get_equity_symbols().keys())
+    return crypto + equity
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# API Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+API_MAX_EVENTS_LIMIT = int(os.getenv("API_MAX_EVENTS_LIMIT", "200"))
+API_MAX_NEIGHBORS_LIMIT = int(os.getenv("API_MAX_NEIGHBORS_LIMIT", "50"))
+API_MAX_PROJECTIONS_LIMIT = int(os.getenv("API_MAX_PROJECTIONS_LIMIT", "50"))
+
+# Validation constraints
+MIN_HORIZON_MINUTES = int(os.getenv("MIN_HORIZON_MINUTES", "1"))
+MAX_HORIZON_MINUTES = int(os.getenv("MAX_HORIZON_MINUTES", "43200"))  # 30 days
+MIN_LOOKBACK_DAYS = int(os.getenv("MIN_LOOKBACK_DAYS", "1"))
+MAX_LOOKBACK_DAYS = int(os.getenv("MAX_LOOKBACK_DAYS", "730"))  # 2 years
+
+# ═══════════════════════════════════════════════════════════════════════
+# Feature flags
+# ═══════════════════════════════════════════════════════════════════════
+
+DISABLE_STARTUP_INGESTION = os.getenv("DISABLE_STARTUP_INGESTION", "false").lower() in ("true", "1", "yes")
+DISABLE_NFL_ELO_INGEST = os.getenv("DISABLE_NFL_ELO_INGEST", "false").lower() in ("true", "1", "yes")
+DISABLE_BAKER_PROJECTIONS = os.getenv("DISABLE_BAKER_PROJECTIONS", "false").lower() in ("true", "1", "yes")
