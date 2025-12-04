@@ -138,40 +138,44 @@ uv run python -m cli.forecast_cli events --limit 20
 ```
 backend/
 ├── app.py                        # FastAPI endpoints + scheduler
+├── config.py                     # Centralized configuration (NEW)
 ├── db.py                         # PostgreSQL connection pool
 ├── embeddings.py                 # OpenAI embedding utilities
 ├── llm/                          # LLM provider abstractions
 │   ├── __init__.py
 │   └── providers.py              # Claude, OpenAI, Gemini
 ├── ingest/
-│   ├── rss_ingest.py            # RSS → events table
-│   └── backfill_crypto_returns.py # yfinance → asset_returns
+│   ├── rss_ingest.py            # RSS → events table (batch optimized)
+│   ├── backfill_crypto_returns.py # yfinance → asset_returns
+│   └── status.py                 # Ingestion status tracking (NEW)
 ├── models/
 │   ├── naive_asset_forecaster.py      # Baseline numeric forecaster
 │   ├── event_return_forecaster.py     # Event-conditioned forecaster
 │   ├── regime_classifier.py           # Market regime detection
-│   └── trained/                       # Serialized ML models (.pkl)
+│   └── trained/                       # Serialized ML models (.pkl, .json)
 ├── signals/
 │   ├── price_context.py               # Price features (returns, vol)
 │   ├── context_window.py              # Event features
 │   └── feature_extractor.py           # Unified feature builder
 ├── numeric/
-│   └── asset_returns.py               # Asset return helpers
+│   └── asset_returns.py               # Asset return helpers (validated)
 ├── cli/
 │   └── forecast_cli.py                # Command-line forecasting
 ├── notebooks/
-│   └── asset_forecaster_training.py   # ML training pipeline
+│   └── asset_forecaster_training.py   # ML training pipeline (fixed lookahead)
 └── tests/
     └── test_api.py
 
 frontend/
 ├── app/
-│   ├── page.tsx                 # Main dashboard
+│   ├── page.tsx                 # Main dashboard (dynamic updates)
 │   └── events/
 │       └── page.tsx             # Event feed
-├── components/                  # React components
+├── components/                  # React components (dynamic selectors)
+│   ├── SymbolSelector.tsx       # Dynamic symbol selection
+│   └── HorizonSelector.tsx      # Dynamic horizon selection
 └── lib/
-    └── api.ts                   # Typed API client
+    └── api.ts                   # Typed API client (discovery endpoints)
 ```
 
 ### Database Schema
@@ -188,12 +192,26 @@ frontend/
 ### API Endpoints
 
 ```
+# Health & Discovery
 GET  /health                          # Health check (DB + pgvector)
+GET  /symbols/available               # Get all available symbols (NEW)
+GET  /horizons/available              # Get available forecast horizons (NEW)
+GET  /sources/available               # Get RSS sources with counts (NEW)
+
+# Events
 POST /events                          # Insert event with embedding
-GET  /events/recent                   # Recent events feed
+GET  /events/recent                   # Recent events feed (with domain filter)
 GET  /events/{event_id}/similar       # Semantic neighbors via pgvector
-GET  /forecast/asset                  # Baseline numeric forecast
-GET  /forecast/event/{event_id}       # Event-conditioned forecast
+
+# Forecasts
+GET  /forecast/asset                  # Baseline numeric forecast (validated)
+GET  /forecast/event/{event_id}       # Event-conditioned forecast (validated)
+
+# Projections
+GET  /projections/latest              # External projections (e.g., NFL)
+GET  /projections/teams               # Available projection teams
+
+# Analysis
 GET  /analyze/event/{event_id}        # LLM analysis (sentiment, impact)
 POST /analyze/sentiment               # Quick sentiment classification
 ```
@@ -213,13 +231,20 @@ as_of = datetime.now(tz=timezone.utc)
 as_of = datetime.now()
 ```
 
-### 2. No Future Data Leakage
-Features and labels must only use data from before `as_of`. This is critical for ML integrity.
+**Validation is enforced:** All datetime-accepting functions now validate `tzinfo is not None` and raise `ValueError` if naive.
+
+### 2. No Future Data Leakage (CRITICAL)
+Features and labels must only use data from **strictly before** `as_of`. This is critical for ML integrity.
 
 ```python
-# When building features for time T, only use data from < T
-features = build_features(symbol, as_of=T)  # looks backward only
+# CORRECT: Use < for strict temporal ordering
+WHERE e.timestamp < %s  # Events before as_of
+
+# WRONG: Using <= allows lookahead bias
+WHERE e.timestamp <= %s  # DON'T DO THIS
 ```
+
+**Recent Fix:** ML training pipeline now uses `< as_of` instead of `<= as_of` to prevent lookahead bias.
 
 ### 3. Embeddings
 - Generate from `clean_text` (fallback to `raw_text`)
@@ -227,50 +252,121 @@ features = build_features(symbol, as_of=T)  # looks backward only
 - pgvector literal format: `"[0.1,0.2,...]"`
 - Always from `embeddings.embed_text()`
 
-### 4. Database Access Pattern
+### 4. Database Access Pattern (SQL Injection Prevention)
 
 ```python
 from db import get_conn
+from psycopg import sql
 
 with get_conn() as conn:
     with conn.cursor() as cur:
-        cur.execute("SELECT ...", (params,))
-        rows = cur.fetchall()  # dict_row format
+        # CORRECT: Parameterized queries
+        cur.execute("SELECT * FROM events WHERE id = %s", (event_id,))
+
+        # CORRECT: Dynamic table/column names with sql.Identifier
+        query = sql.SQL("INSERT INTO events ({}) VALUES ({})").format(
+            sql.SQL(", ").join(sql.Identifier(col) for col in cols),
+            sql.SQL(", ").join(sql.Placeholder() * len(cols)),
+        )
+        cur.execute(query, values)
+
+        # WRONG: String interpolation (SQL injection risk!)
+        cur.execute(f"SELECT * FROM events WHERE id = '{event_id}'")  # DON'T DO THIS
 ```
 
 **Always use parameterized queries to prevent SQL injection.**
 
-### 5. Unique Constraints
+### 5. Configuration Management
+**All hardcoded values MUST go in `backend/config.py` with environment variable support.**
+
+```python
+# CORRECT: Use centralized config
+from config import get_crypto_symbols, FORECAST_DIRECTION_THRESHOLD
+
+symbols = get_crypto_symbols()
+threshold = FORECAST_DIRECTION_THRESHOLD
+
+# WRONG: Hardcoded values
+symbols = {"BTC-USD": "BTC-USD", "ETH-USD": "ETH-USD"}  # DON'T DO THIS
+```
+
+**Adding new symbols:** Update `backend/.env` with `CRYPTO_SYMBOLS` env var. Frontend automatically discovers via `/symbols/available`.
+
+### 6. Input Validation
+**All API endpoints MUST validate inputs using FastAPI Query parameters.**
+
+```python
+# CORRECT: Validated inputs with constraints
+@app.get("/forecast/asset")
+def forecast_asset_endpoint(
+    symbol: str = Query(..., min_length=1, max_length=50),
+    horizon_minutes: int = Query(
+        DEFAULT_HORIZON_MINUTES,
+        ge=MIN_HORIZON_MINUTES,
+        le=MAX_HORIZON_MINUTES
+    ),
+):
+    # Inputs are guaranteed valid here
+    pass
+```
+
+### 7. Unique Constraints
 Respect `(symbol, as_of, horizon_minutes)` uniqueness in `asset_returns` table.
 
-### 6. Modularity
+### 8. Modularity
 - New data sources → `ingest/`
 - Feature engineering → `signals/`
 - Forecasting models → `models/`
+- Configuration → `config.py`
 - Keep `app.py` thin (routing only)
 
-### 7. Baseline First
+### 9. Baseline First
 The naive forecaster is the baseline. ML models must beat it to be deployed.
+
+### 10. Batch Operations
+**Use batch operations for performance.**
+
+```python
+# CORRECT: Batch insert
+events_data = [prepare_event_data(entry, ...) for entry in entries]
+insert_events_batch(events_data)  # 10-100x faster
+
+# WRONG: Individual inserts in loop
+for entry in entries:
+    insert_event(entry, ...)  # Slow!
+```
 
 ## Background Jobs
 
 The backend runs scheduled jobs via APScheduler (started on app startup):
 
-- **RSS ingestion**: Hourly (sources: Wired AI, HackerNews, etc.)
-- **Crypto price backfill**: Daily (symbols: BTC-USD, ETH-USD, XMR-USD)
+- **RSS ingestion**: Hourly (12 curated market-relevant feeds: crypto, tech, sports)
+- **Crypto price backfill**: Daily (configurable symbols via `CRYPTO_SYMBOLS`)
+- **Equity price backfill**: Daily (configurable symbols via `EQUITY_SYMBOLS`)
+- **Baker projections**: Hourly (NFL win probabilities)
+- **NFL Elo**: Daily (disabled by default via `DISABLE_NFL_ELO_INGEST=true`)
 
-Jobs are configured in `app.py` startup event handler.
+Jobs are configured in `app.py` startup event handler with configurable intervals via `config.py`.
+
+**Disabling jobs:**
+```bash
+# backend/.env
+DISABLE_STARTUP_INGESTION=true       # Skip all ingestion on startup
+DISABLE_NFL_ELO_INGEST=true          # Skip NFL Elo (recommended - has CSV parsing issues)
+DISABLE_BAKER_PROJECTIONS=true       # Skip Baker projections (if not needed)
+```
 
 ### Performance Optimizations
 
 The ingestion system is highly optimized to minimize API costs and runtime:
 
 1. **Batch Duplicate Checking**: All URLs are checked against the database in a single query before processing
-2. **Timestamp Filtering**: After the first run, only entries newer than the last fetch are processed
-3. **Feed Metadata Tracking**: The `feed_metadata` table tracks when each source was last fetched
-4. **Skip Startup Flag**: Set `DISABLE_STARTUP_INGESTION=true` in `.env` to skip ingestion during development
+2. **Batch Insert**: Uses `executemany()` for 10-100x faster database writes
+3. **Timestamp Filtering**: After the first run, only entries newer than the last fetch are processed
+4. **Feed Metadata Tracking**: The `feed_metadata` table tracks when each source was last fetched
+5. **Skip Startup Flag**: Set `DISABLE_STARTUP_INGESTION=true` in `.env` to skip ingestion during development
 
-**Result:** First run processes all entries. Subsequent runs only check new entries and skip embedding calls for duplicates entirely.
+**Result:** First run processes all entries. Subsequent runs only check new entries and skip embedding calls for duplicates entirely. Batch operations provide massive speedup.
 
 ## ML Training Pipeline
 
@@ -278,38 +374,68 @@ Location: `backend/notebooks/asset_forecaster_training.py`
 
 **Training workflow:**
 1. Build feature dataset with `signals/feature_extractor.py`
-2. Time-based train/test split (no shuffle!)
+2. **Per-symbol** time-based train/test split (80/20, no shuffle!)
 3. Train RandomForestRegressor (baseline ML model)
-4. Evaluate: MAE, RMSE, directional accuracy
-5. Serialize to `backend/models/trained/asset_return_rf.pkl`
+4. Evaluate: MAE, RMSE, directional accuracy (per-symbol metrics)
+5. Serialize to `backend/models/trained/asset_return_rf.pkl` or `.json`
 
 **Model metadata includes:**
 - Training date
 - Feature names + schema version
 - Symbol list
 - Train/test date ranges
-- Evaluation metrics
+- Evaluation metrics (per-symbol and aggregate)
+
+**Critical Fix Applied:**
+- Event counting now uses `< as_of` (strict before) instead of `<= as_of` to prevent lookahead bias
+- Train/test split is **per-symbol** to prevent cross-asset leakage
+- Ensures valid ML performance metrics
 
 ## Environment Variables
 
-Required in `backend/.env`:
+All configuration is centralized in `backend/config.py` with environment variable support.
+
+**Required in `backend/.env`:**
 
 ```bash
-# Required
-OPENAI_API_KEY=sk-...              # Required for embeddings
+# Required for embeddings
+OPENAI_API_KEY=sk-...
 
 # Optional - LLM providers
-ANTHROPIC_API_KEY=sk-ant-...       # Optional (for LLM analysis)
-GOOGLE_API_KEY=...                 # Optional (for Gemini)
+ANTHROPIC_API_KEY=sk-ant-...       # For LLM analysis
+GOOGLE_API_KEY=...                 # For Gemini
 
-# Optional - Performance
-DISABLE_STARTUP_INGESTION=true     # Skip ingestion on startup (dev mode)
+# Feature flags (recommended for development)
+DISABLE_STARTUP_INGESTION=true     # Skip ingestion on startup (faster restarts)
+DISABLE_NFL_ELO_INGEST=true        # Skip NFL Elo (has CSV parsing issues)
+
+# Symbol configuration (optional - has sensible defaults)
+CRYPTO_SYMBOLS=BTC-USD:BTC-USD,ETH-USD:ETH-USD,XMR-USD:XMR-USD
+EQUITY_SYMBOLS=NVDA:NVDA
+
+# Scheduler intervals (hours, optional)
+RSS_INGEST_INTERVAL_HOURS=1
+CRYPTO_BACKFILL_INTERVAL_HOURS=24
+BAKER_PROJECTIONS_INTERVAL_HOURS=1
+
+# Forecasting thresholds (optional)
+FORECAST_DIRECTION_THRESHOLD=0.0005
+FORECAST_CONFIDENCE_SCALE=2.0
+
+# API limits (optional)
+API_MAX_EVENTS_LIMIT=200
+API_MAX_NEIGHBORS_LIMIT=50
 
 # Auto-configured
 DATABASE_URL=postgresql://...       # Auto-set by docker-compose
 ```
 
-See `backend/.env.example` for complete documentation.
+**Frontend `.env.local`:**
+```bash
+NEXT_PUBLIC_API_URL=https://will-node.ngrok.dev  # Or http://localhost:9000
+```
+
+See `backend/.env.example` for complete documentation with all 30+ configuration options.
 
 ## LLM Providers
 
@@ -323,27 +449,43 @@ Provider abstraction ensures vendor-agnostic endpoints. If a provider fails, ret
 
 ## Adding New Features
 
+### New Symbols (Crypto/Equity)
+**No code changes required!** Just update configuration:
+
+```bash
+# backend/.env
+CRYPTO_SYMBOLS=BTC-USD:BTC-USD,ETH-USD:ETH-USD,SOL-USD:SOL-USD,AVAX-USD:AVAX-USD
+EQUITY_SYMBOLS=NVDA:NVDA,TSLA:TSLA,AAPL:AAPL
+```
+
+Frontend automatically discovers new symbols via `/symbols/available` endpoint.
+
 ### New Data Source
 1. Create ingestion script in `ingest/`
-2. Normalize to `events` table schema
-3. Add to scheduler in `app.py` if recurring
+2. Normalize to `events` table schema with `categories` for domain classification
+3. Add configuration to `config.py` with env var support
+4. Add to scheduler in `app.py` if recurring
+5. Use batch operations for performance
 
 ### New Forecasting Model
 1. Create module in `models/`
 2. Follow result schema: `{expected_return, direction, confidence, sample_size}`
-3. Add endpoint in `app.py`
-4. Must include fallback to baseline on errors
+3. Import configuration from `config.py` (no hardcoded values!)
+4. Add endpoint in `app.py` with input validation
+5. Must include fallback to baseline on errors
 
-### New Features
+### New Features (ML)
 1. Add stateless functions to `signals/`
 2. Maintain feature schema versioning
 3. Document in `signals/feature_extractor.py`
-4. Ensure no lookahead bias
+4. **Ensure no lookahead bias** (use `< as_of`, never `<=`)
+5. Validate timezone-aware datetimes
 
 ### Schema Changes
 1. Update `db/init.sql`
 2. Document in this file
 3. Consider migration strategy for existing data
+4. Update affected queries to use parameterized SQL
 
 ## Testing
 
@@ -373,29 +515,50 @@ For deeper understanding, consult:
 
 ## Common Pitfalls
 
-1. **Using naive datetimes** - Always use `datetime.now(tz=timezone.utc)`
-2. **Future data leakage** - Ensure features only look backward
-3. **Forgetting to sync dependencies** - Run `uv sync` after pulling changes
-4. **Database schema drift** - Keep `db/init.sql` as source of truth
-5. **Ignoring sample size** - Low-confidence forecasts need sample_size checks
-6. **Breaking API contracts** - Never change endpoint paths or response schemas without versioning
+1. **Using naive datetimes** - Always use `datetime.now(tz=timezone.utc)`. Validation will raise `ValueError` if you forget.
+2. **Future data leakage** - Use `< as_of` (strict before), never `<= as_of`. Critical for ML integrity.
+3. **SQL injection** - Use `psycopg.sql.SQL()` and `sql.Identifier()`, never f-strings for SQL
+4. **Hardcoded values** - Everything goes in `config.py` with env var support
+5. **Forgetting to sync dependencies** - Run `uv sync` after pulling changes
+6. **Database schema drift** - Keep `db/init.sql` as source of truth
+7. **Ignoring sample size** - Low-confidence forecasts need sample_size checks
+8. **Breaking API contracts** - Never change endpoint paths or response schemas without versioning
+9. **Missing input validation** - All API endpoints need FastAPI Query validation
+10. **Individual inserts in loops** - Use batch operations with `executemany()` for 10-100x speedup
 
 ## Project Status
 
-**Current State:**
+**Current State (December 2025):**
 - ✅ Backend: FastAPI + PostgreSQL + pgvector
-- ✅ Event ingestion: Wired AI RSS
-- ✅ Asset returns: BTC-USD, ETH-USD, XMR-USD
+- ✅ Centralized configuration (`config.py`) with 30+ env vars
+- ✅ Event ingestion: 12 curated RSS feeds (crypto, tech, sports)
+- ✅ Asset returns: Configurable symbols (default: BTC, ETH, XMR, NVDA)
 - ✅ Naive forecaster: Baseline historical returns
 - ✅ Event forecaster: Semantic similarity → weighted returns
 - ✅ Regime classifier: Rule-based (uptrend/downtrend/chop/high_vol)
-- ✅ Frontend: Next.js dashboard (MVP)
+- ✅ Frontend: Next.js dashboard with dynamic symbol/horizon discovery
 - ✅ LLM endpoints: Event analysis + sentiment
-- ✅ Background scheduler: RSS hourly, crypto daily
+- ✅ Background scheduler: Configurable intervals, conditional scheduling
+- ✅ Security: SQL injection fixed, timezone validation, input validation
+- ✅ Performance: Batch operations, 10-100x faster ingestion
+- ✅ ML integrity: Lookahead bias fixed, per-symbol train/test splits
+- ✅ Dynamic discovery: `/symbols/available`, `/horizons/available`, `/sources/available`
+- ✅ Developer experience: Zero-config `./run-dev.sh`, clean shutdown
+
+**Recent Fixes (December 2025):**
+- Fixed SQL injection vulnerability in RSS ingestion
+- Fixed ML training lookahead bias (< as_of)
+- Fixed NFL Elo scheduler conditional execution
+- Implemented batch database operations
+- Added comprehensive input validation
+- Created dynamic frontend discovery system
+- Curated RSS feeds to market-relevant sources only
 
 **Next Steps:**
 - ML forecaster beyond baseline (XGBoost/LightGBM)
-- More RSS sources (CoinDesk, CryptoNews)
 - Production deployment (Railway/Render + Vercel)
 - Backtesting framework
 - Model registry and A/B testing
+- Structured logging (replace print statements)
+- Rate limiting middleware
+- Integration tests
