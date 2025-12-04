@@ -1,0 +1,2060 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "NFL v2 Baker Predictive",
+    "version": "1.0",
+    "description": "NFL projections, best bets and trends."
+  },
+  "host": "baker-api.sportsdata.io",
+  "basePath": "/baker/v2/nfl",
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "securityDefinitions": {
+    "apiKeyHeader": {
+      "type": "apiKey",
+      "name": "Ocp-Apim-Subscription-Key",
+      "in": "header"
+    },
+    "apiKeyQuery": {
+      "type": "apiKey",
+      "name": "key",
+      "in": "query"
+    }
+  },
+  "security": [
+    {
+      "apiKeyHeader": []
+    },
+    {
+      "apiKeyQuery": []
+    }
+  ],
+  "paths": {
+    "/changelog": {
+      "get": {
+        "description": "Returns the most recent 100 changelog events that triggered new simulation runs.",
+        "operationId": "BakerChangelog",
+        "summary": "BAKER Changelog",
+        "tags": [
+          "Other"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": [
+                {
+                  "id": "string",
+                  "initiated": "string",
+                  "source": "string",
+                  "changes": [
+                    "string"
+                  ],
+                  "games": [
+                    0
+                  ],
+                  "teams": [
+                    "string"
+                  ]
+                }
+              ]
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/projections/games/{game_id}": {
+      "get": {
+        "description": "Returns the projected game and team outcomes for a given game.",
+        "operationId": "BakerGameProjections",
+        "summary": "BAKER Game Projections",
+        "tags": [
+          "Projections"
+        ],
+        "parameters": [
+          {
+            "name": "game_id",
+            "in": "path",
+            "description": "The SportsDataIO GameId for the game desired. This value is a number.",
+            "required": true,
+            "type": "integer"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "season": 0,
+                "season_name": "string",
+                "week": 0,
+                "week_name": "string",
+                "sportsdata_id": 0,
+                "date": "string",
+                "home_team": "string",
+                "away_team": "string",
+                "home_team_name": "string",
+                "away_team_name": "string",
+                "over_under": 0,
+                "point_spread": 0,
+                "home_team_money_line": 0,
+                "away_team_money_line": 0,
+                "last_updated": "string",
+                "game_projections": {
+                  "points": 0,
+                  "spread": 0,
+                  "plays": 0,
+                  "penalties": 0,
+                  "penalty_yards": 0,
+                  "offensive_plays": 0,
+                  "offensive_yards": 0,
+                  "rushing_yards": 0,
+                  "passing_yards": 0,
+                  "punts": 0,
+                  "first_downs": 0,
+                  "touchdowns": 0,
+                  "tied": 0,
+                  "point_differential": 0,
+                  "points_even": 0,
+                  "points_odd": 0,
+                  "field_goal_attempts": 0,
+                  "field_goals_made": 0,
+                  "field_goals_missed": 0,
+                  "passing_sacks": 0,
+                  "fumbles_lost": 0,
+                  "passing_interceptions": 0,
+                  "turnovers": 0,
+                  "extra_point_kicking_attempts": 0,
+                  "extra_point_kicking_conversions": 0,
+                  "extra_point_kicking_misses": 0
+                },
+                "home_team_projections": {
+                  "key": "string",
+                  "name": "string",
+                  "points": 0,
+                  "win": 0,
+                  "offensive_yards": 0,
+                  "rushing_yards": 0,
+                  "passing_yards": 0,
+                  "punts": 0,
+                  "first_downs": 0,
+                  "touchdowns": 0,
+                  "fumbles_lost": 0,
+                  "passing_sacks": 0,
+                  "passing_interceptions": 0,
+                  "field_goal_attempts": 0,
+                  "field_goals_made": 0,
+                  "field_goals_missed": 0,
+                  "turnovers": 0
+                },
+                "away_team_projections": {
+                  "key": "string",
+                  "name": "string",
+                  "points": 0,
+                  "win": 0,
+                  "offensive_yards": 0,
+                  "rushing_yards": 0,
+                  "passing_yards": 0,
+                  "punts": 0,
+                  "first_downs": 0,
+                  "touchdowns": 0,
+                  "fumbles_lost": 0,
+                  "passing_sacks": 0,
+                  "passing_interceptions": 0,
+                  "field_goal_attempts": 0,
+                  "field_goals_made": 0,
+                  "field_goals_missed": 0,
+                  "turnovers": 0
+                },
+                "links": {
+                  "player_projections_url": "string",
+                  "top_passers_url": "string",
+                  "top_rushers_url": "string",
+                  "top_receivers_url": "string",
+                  "top_kickers_url": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/{season_name}/{week_number}/avg": {
+      "get": {
+        "description": "Returns the average projected statsistics for the top 50 players sorted by the sort_by parameter.\n\nCan be filtered by game_id, team, and position.\n\nTo retreive all players efficiently, use the /team endpoint or the /stat endpoint and call them for each team or statistic required.",
+        "operationId": "BakerPlayerProjectionsWeekAverage",
+        "summary": "BAKER Player Projections Week Average",
+        "tags": [
+          "Projections"
+        ],
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "description": "The name of the week. Example: <code>16</code>",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "position",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "QB",
+              "RB",
+              "WR",
+              "TE",
+              "K",
+              "DST"
+            ]
+          },
+          {
+            "name": "game_id",
+            "in": "query",
+            "type": "integer"
+          },
+          {
+            "name": "team",
+            "in": "query",
+            "type": "string",
+            "enum": [
+              "ARI",
+              "ATL",
+              "BAL",
+              "BUF",
+              "CAR",
+              "CHI",
+              "CIN",
+              "CLE",
+              "DAL",
+              "DEN",
+              "DET",
+              "GB",
+              "HOU",
+              "IND",
+              "JAX",
+              "KC",
+              "LAC",
+              "LAR",
+              "LV",
+              "MIA",
+              "MIN",
+              "NE",
+              "NO",
+              "NYG",
+              "NYJ",
+              "PHI",
+              "PIT",
+              "SEA",
+              "SF",
+              "TB",
+              "TEN",
+              "WAS"
+            ]
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "type": "string",
+            "default": "passing_yards",
+            "allOf": [
+              {
+                "$ref": "#/definitions/PlayerStatCategories"
+              }
+            ]
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/{season_name}/{week_number}/stat/{stat}/avg": {
+      "get": {
+        "description": "Returns the average projected statistic for up to 500 players sorted in descending order.",
+        "operationId": "BakerPlayerProjectionsWeekAverageSingleStatistic",
+        "summary": "BAKER Player Projections Week Average Single Statistic",
+        "tags": [
+          "Projections"
+        ],
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "description": "The name of the week. Example: <code>16</code>",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "stat",
+            "in": "path",
+            "description": "The name of the statistic desired. Example: <code>rushing_attempts</code>",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "rushing_attempts",
+              "rushing_yards",
+              "rushing_touchdowns",
+              "first_downs",
+              "fumbles_lost",
+              "targets",
+              "catches",
+              "receiving_yards",
+              "receiving_touchdowns",
+              "passing_attempts",
+              "passing_completions",
+              "passing_interceptions",
+              "passing_yards",
+              "passing_touchdowns",
+              "field_goals_attempted",
+              "field_goals_made",
+              "field_goals_missed",
+              "extra_point_kicking_attempts",
+              "extra_point_kicking_conversions",
+              "extra_point_kicking_misses",
+              "first_touchdown_scored",
+              "touchdowns_gte_1",
+              "touchdowns_gte_2",
+              "touchdowns_gte_3",
+              "rushing_receiving_touchdowns",
+              "rushing_receiving_yards",
+              "longest_catch",
+              "longest_rush",
+              "longest_pass",
+              "fantasy_points_half_ppr",
+              "passing_sacks"
+            ]
+          },
+          {
+            "name": "position",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "QB",
+              "RB",
+              "WR",
+              "TE",
+              "K",
+              "DST"
+            ]
+          },
+          {
+            "name": "game_id",
+            "in": "query",
+            "type": "integer"
+          },
+          {
+            "name": "team",
+            "in": "query",
+            "type": "string",
+            "enum": [
+              "ARI",
+              "ATL",
+              "BAL",
+              "BUF",
+              "CAR",
+              "CHI",
+              "CIN",
+              "CLE",
+              "DAL",
+              "DEN",
+              "DET",
+              "GB",
+              "HOU",
+              "IND",
+              "JAX",
+              "KC",
+              "LAC",
+              "LAR",
+              "LV",
+              "MIA",
+              "MIN",
+              "NE",
+              "NO",
+              "NYG",
+              "NYJ",
+              "PHI",
+              "PIT",
+              "SEA",
+              "SF",
+              "TB",
+              "TEN",
+              "WAS"
+            ]
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 100,
+            "maximum": 500.0,
+            "minimum": 1.0
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "stat": "rushing_attempts",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/{season_name}/{week_number}/stat/{stat}/percentile/{percentile}": {
+      "get": {
+        "description": "Returns the percentile of the projected statistic for up to 500 players sorted in descending order.",
+        "operationId": "BakerPlayerProjectionsWeekPercentileSingleStatistic",
+        "summary": "BAKER Player Projections Week Percentile Single Statistic",
+        "tags": [
+          "Projections"
+        ],
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "stat",
+            "in": "path",
+            "description": "The name of the statistic desired. Example: <code>rushing_attempts</code>",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "rushing_attempts",
+              "rushing_yards",
+              "rushing_touchdowns",
+              "first_downs",
+              "fumbles_lost",
+              "targets",
+              "catches",
+              "receiving_yards",
+              "receiving_touchdowns",
+              "passing_attempts",
+              "passing_completions",
+              "passing_interceptions",
+              "passing_yards",
+              "passing_touchdowns",
+              "field_goals_attempted",
+              "field_goals_made",
+              "field_goals_missed",
+              "extra_point_kicking_attempts",
+              "extra_point_kicking_conversions",
+              "extra_point_kicking_misses",
+              "first_touchdown_scored",
+              "touchdowns_gte_1",
+              "touchdowns_gte_2",
+              "touchdowns_gte_3",
+              "rushing_receiving_touchdowns",
+              "rushing_receiving_yards",
+              "longest_catch",
+              "longest_rush",
+              "longest_pass",
+              "fantasy_points_half_ppr",
+              "passing_sacks"
+            ]
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "description": "The name of the week. Example: <code>16</code>",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "percentile",
+            "in": "path",
+            "description": "The desired percentile for the distribution of the projections. Example: <code>90</code>",
+            "required": true,
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0
+          },
+          {
+            "name": "game_id",
+            "in": "query",
+            "type": "integer"
+          },
+          {
+            "name": "team",
+            "in": "query",
+            "type": "string",
+            "enum": [
+              "ARI",
+              "ATL",
+              "BAL",
+              "BUF",
+              "CAR",
+              "CHI",
+              "CIN",
+              "CLE",
+              "DAL",
+              "DEN",
+              "DET",
+              "GB",
+              "HOU",
+              "IND",
+              "JAX",
+              "KC",
+              "LAC",
+              "LAR",
+              "LV",
+              "MIA",
+              "MIN",
+              "NE",
+              "NO",
+              "NYG",
+              "NYJ",
+              "PHI",
+              "PIT",
+              "SEA",
+              "SF",
+              "TB",
+              "TEN",
+              "WAS"
+            ]
+          },
+          {
+            "name": "position",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "QB",
+              "RB",
+              "WR",
+              "TE",
+              "K",
+              "DST"
+            ]
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "type": "integer",
+            "default": 100,
+            "maximum": 500.0,
+            "minimum": 1.0
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "stat": "rushing_attempts",
+                "percentile": 0,
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/{season_name}/{week_number}/team/{team}/avg": {
+      "get": {
+        "description": "Returns the average projections for all players on the specified team.",
+        "operationId": "BakerPlayerProjectionsWeekAveragePerTeam",
+        "summary": "BAKER Player Projections Week Average Per Team",
+        "tags": [
+          "Projections"
+        ],
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "description": "The name of the week. Example: <code>16</code>",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "team",
+            "in": "path",
+            "description": "The Key indicator of the team desired. Example: <code>NE</code>",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "ARI",
+              "ATL",
+              "BAL",
+              "BUF",
+              "CAR",
+              "CHI",
+              "CIN",
+              "CLE",
+              "DAL",
+              "DEN",
+              "DET",
+              "GB",
+              "HOU",
+              "IND",
+              "JAX",
+              "KC",
+              "LAC",
+              "LAR",
+              "LV",
+              "MIA",
+              "MIN",
+              "NE",
+              "NO",
+              "NYG",
+              "NYJ",
+              "PHI",
+              "PIT",
+              "SEA",
+              "SF",
+              "TB",
+              "TEN",
+              "WAS"
+            ]
+          },
+          {
+            "name": "position",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "QB",
+              "RB",
+              "WR",
+              "TE",
+              "K",
+              "DST"
+            ]
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "type": "string",
+            "default": "passing_yards",
+            "allOf": [
+              {
+                "$ref": "#/definitions/PlayerStatCategories"
+              }
+            ]
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/{season_name}/{week_number}/team/{team}/percentile/{percentile}": {
+      "get": {
+        "description": "Returns a percentile of projections for all players on the specified team.",
+        "operationId": "BakerPlayerProjectionsWeekPercentilePerTeam",
+        "summary": "BAKER Player Projections Week Percentile Per Team",
+        "tags": [
+          "Projections"
+        ],
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "description": "The name of the week. Example: <code>16</code>",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "team",
+            "in": "path",
+            "description": "The Key indicator of the team desired. Example: <code>NE</code>",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "ARI",
+              "ATL",
+              "BAL",
+              "BUF",
+              "CAR",
+              "CHI",
+              "CIN",
+              "CLE",
+              "DAL",
+              "DEN",
+              "DET",
+              "GB",
+              "HOU",
+              "IND",
+              "JAX",
+              "KC",
+              "LAC",
+              "LAR",
+              "LV",
+              "MIA",
+              "MIN",
+              "NE",
+              "NO",
+              "NYG",
+              "NYJ",
+              "PHI",
+              "PIT",
+              "SEA",
+              "SF",
+              "TB",
+              "TEN",
+              "WAS"
+            ]
+          },
+          {
+            "name": "percentile",
+            "in": "path",
+            "description": "The desired percentile for the distribution of the projections. Example: <code>90</code>",
+            "required": true,
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0
+          },
+          {
+            "name": "position",
+            "in": "query",
+            "required": true,
+            "type": "string",
+            "enum": [
+              "QB",
+              "RB",
+              "WR",
+              "TE",
+              "K",
+              "DST"
+            ]
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "type": "string",
+            "default": "passing_yards",
+            "allOf": [
+              {
+                "$ref": "#/definitions/PlayerStatCategories"
+              }
+            ]
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "percentile": 0,
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/best-bets/{season_name}/{week_number}": {
+      "get": {
+        "description": "Weekly Best Bets",
+        "operationId": "BakerWeeklyBestBets",
+        "summary": "BAKER Weekly Best Bets",
+        "tags": [
+          "Best Bets"
+        ],
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "description": "The name of the week. Example: <code>16</code>",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "type": "string",
+            "default": "win_pct",
+            "allOf": [
+              {
+                "$ref": "#/definitions/BestBetsSortBy"
+              }
+            ]
+          },
+          {
+            "name": "min_win_prob",
+            "in": "query",
+            "type": "number",
+            "default": 0.0
+          },
+          {
+            "name": "bet_type",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "market_type",
+            "in": "query",
+            "type": "string"
+          },
+          {
+            "name": "sportsbook",
+            "in": "query",
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "bet_type": "string",
+                    "sportsbook": "string",
+                    "outcome_tupye": "string",
+                    "value": 0,
+                    "odds": 0,
+                    "successful_bet_roi": 0,
+                    "projected_median_value": 0,
+                    "projected_win_pct": 0,
+                    "projected_ev": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/best-bets/{season_name}/{week_number}/picks": {
+      "get": {
+        "description": "Weekly Best Bets Game Picks",
+        "operationId": "BakerWeeklyBestBetsGamePicks",
+        "summary": "BAKER Weekly Best Bets Game Picks",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "description": "The name of the week. Example: <code>16</code>",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "type": "string",
+            "default": "win_pct",
+            "allOf": [
+              {
+                "$ref": "#/definitions/BestBetsSortBy"
+              }
+            ]
+          },
+          {
+            "name": "sportsbook",
+            "in": "query",
+            "type": "string",
+            "default": "0"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "bet_type": "string",
+                    "sportsbook": "string",
+                    "outcome_tupye": "string",
+                    "value": 0,
+                    "odds": 0,
+                    "successful_bet_roi": 0,
+                    "projected_median_value": 0,
+                    "projected_win_pct": 0,
+                    "projected_ev": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/query/games/{game_id}": {
+      "post": {
+        "description": "The advanced query engine powered by Baker, allowing for conditional queries. See the <a href=\"https://sportsdata.io/files/bakeradvnfl.html\">Advanced Query documentation</a> for more details.",
+        "operationId": "BakerAdvancedQueryGame",
+        "summary": "BAKER Advanced Query Game",
+        "parameters": [
+          {
+            "name": "game_id",
+            "in": "path",
+            "description": "The GameId of the event. This GameId is the SportsDataIO GameId.",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {
+              "example": {
+                "select": [
+                  {
+                    "category": "game",
+                    "metric": "spread",
+                    "measure": "average",
+                    "period": "final",
+                    "player_id": 0,
+                    "value": 0
+                  }
+                ],
+                "where": [
+                  {
+                    "category": "game",
+                    "metric": "spread",
+                    "period": "final",
+                    "operator": "gt",
+                    "value": 0,
+                    "player_id": 0
+                  }
+                ]
+              }
+            },
+            "description": "The body sent to tell the BAKER API which fields to return and the conditions to use when filtering."
+          }
+        ],
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": [
+                {
+                  "id": "string",
+                  "initiated": "string",
+                  "source": "string",
+                  "changes": [
+                    "string"
+                  ],
+                  "games": [
+                    0
+                  ],
+                  "teams": [
+                    "string"
+                  ]
+                }
+              ]
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/projections/players/full-season/{season_name}/avg": {
+      "get": {
+        "description": "Returns the average full-season projections for all players. Does not change after the season starts.",
+        "operationId": "BakerPlayerProjectionsFullSeasonAverage",
+        "summary": "BAKER Player Projections Full-Season Average",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "Available values : 2025REG, 2024REG, 2024POST, 2023POST, 2023REG, 2022POST, 2022REG",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/fantasy-defense/{season_name}/{week_number}/avg": {
+      "get": {
+        "description": "Returns the average projected statistics for the fantasy defense",
+        "operationId": "BakerFantasyDefenseProjectionsWeekAverage",
+        "summary": "BAKER Fantasy Defense Projections Week Average",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "Available values : 2025REG, 2024REG, 2024POST, 2023POST, 2023REG, 2022POST, 2022REG",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "week_number",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/full-season/{season_name}/ceiling/fantasy_points_yahoo_season_long": {
+      "get": {
+        "description": "Returns the full-season fantasy ceiling projections for all players. Does not change after the season starts.",
+        "operationId": "BakerPlayerFullSeasonProjectionsFantasyCeiling",
+        "summary": "BAKER Player Full-Season Projections Fantasy Ceiling",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/full-season/{season_name}/floor/fantasy_points_yahoo_season_long": {
+      "get": {
+        "description": "Returns the full-season fantasy floor projections for all players. Does not change after the season starts.",
+        "operationId": "BakerPlayerFullSeasonProjectionsFantasyFloor",
+        "summary": "BAKER Player Full-Season Projections Fantasy Floor",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/rest-of-season/{season_name}/avg": {
+      "get": {
+        "description": "Returns the rest-of-season fantasy ceiling projections for all players. Changes as the season progresses.",
+        "operationId": "BakerPlayerRestOfSeasonProjectionsAverage",
+        "summary": "BAKER Player Rest-of-Season Projections Average",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/rest-of-season/{season_name}/floor/fantasy_points_yahoo_season_long": {
+      "get": {
+        "description": "Returns the rest-of-season fantasy floor projections for all players. Changes as the season progresses.",
+        "operationId": "BakerPlayerRestOfSeasonProjectionsFantasyFloor",
+        "summary": "BAKER Player Rest-of-Season Projections Fantasy Floor",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projections/players/rest-of-season/{season_name}/ceiling/fantasy_points_yahoo_season_long": {
+      "get": {
+        "description": "Returns the rest-of-season fantasy ceiling projections for all players. Changes as the season progresses.",
+        "operationId": "BakerPlayerRestOfSeasonProjectionsFantasyCeiling",
+        "summary": "BAKER Player Rest-of-Season Projections Fantasy Ceiling",
+        "parameters": [
+          {
+            "name": "season_name",
+            "in": "path",
+            "description": "The name of the season. Examples: <code>2022REG</code>",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "schema": {
+              "type": "null",
+              "x-nullable": false
+            },
+            "examples": {
+              "application/json": {
+                "last_updated": "string",
+                "data": [
+                  {
+                    "name": "string",
+                    "player_id": 0,
+                    "position": "string",
+                    "team": "string",
+                    "rushing_attempts": 0,
+                    "rushing_yards": 0,
+                    "rushing_touchdowns": 0,
+                    "first_downs": 0,
+                    "fumbles_lost": 0,
+                    "targets": 0,
+                    "catches": 0,
+                    "receiving_yards": 0,
+                    "receiving_touchdowns": 0,
+                    "passing_attempts": 0,
+                    "passing_completions": 0,
+                    "passing_interceptions": 0,
+                    "passing_yards": 0,
+                    "passing_touchdowns": 0,
+                    "passing_sacks": 0,
+                    "field_goals_attempted": 0,
+                    "field_goals_made": 0,
+                    "field_goals_missed": 0,
+                    "extra_point_kicking_attempts": 0,
+                    "extra_point_kicking_conversions": 0,
+                    "extra_point_kicking_misses": 0,
+                    "first_touchdown_scored": 0,
+                    "touchdowns_gte_1": 0,
+                    "touchdowns_gte_2": 0,
+                    "touchdowns_gte_3": 0,
+                    "rushing_receiving_touchdowns": 0,
+                    "rushing_receiving_yards": 0,
+                    "longest_catch": 0,
+                    "longest_rush": 0,
+                    "longest_pass": 0
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "schema": {
+              "$ref": "#/definitions/HTTPValidationError"
+            },
+            "examples": {
+              "application/json": {
+                "detail": [
+                  {
+                    "loc": [
+                      {}
+                    ],
+                    "msg": "string",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {},
+  "tags": []
+}
