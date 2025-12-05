@@ -205,9 +205,20 @@ export function ProjectionCard({
           )}
         </>
       ) : (
-        <p className="text-sm text-gray-500">
-          No projections available for this target yet.
-        </p>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">
+            No projections available for this target yet.
+          </p>
+          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+            <p className="text-xs font-semibold text-yellow-400">Setup Required</p>
+            <p className="mt-1 text-xs text-gray-400">
+              To enable NFL projections, set the <code className="rounded bg-gray-900 px-1 py-0.5">BAKER_API_KEY</code> environment variable in <code className="rounded bg-gray-900 px-1 py-0.5">backend/.env</code> and run the Baker projections ingestion:
+            </p>
+            <pre className="mt-2 rounded bg-gray-900 p-2 text-xs text-gray-300">
+cd backend && uv run python -m ingest.baker_projections
+            </pre>
+          </div>
+        </div>
       )}
 
       {projections && projections.length > 1 && (

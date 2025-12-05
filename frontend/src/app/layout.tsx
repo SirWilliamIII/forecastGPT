@@ -41,7 +41,19 @@ export default function RootLayout({
                   href="/"
                   className="text-sm text-gray-400 transition-colors hover:text-white"
                 >
-                  Dashboard
+                  Home
+                </a>
+                <a
+                  href="/crypto"
+                  className="text-sm text-gray-400 transition-colors hover:text-white"
+                >
+                  Crypto
+                </a>
+                <a
+                  href="/nfl"
+                  className="text-sm text-gray-400 transition-colors hover:text-white"
+                >
+                  NFL
                 </a>
                 <a
                   href="/events"

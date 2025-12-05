@@ -536,7 +536,8 @@ For deeper understanding, consult:
 - ✅ Naive forecaster: Baseline historical returns
 - ✅ Event forecaster: Semantic similarity → weighted returns
 - ✅ Regime classifier: Rule-based (uptrend/downtrend/chop/high_vol)
-- ✅ Frontend: Next.js dashboard with dynamic symbol/horizon discovery
+- ✅ Frontend: Separated pages - `/` (landing), `/crypto`, `/nfl`, `/events`
+- ✅ Domain-filtered events: Crypto events on crypto page, sports events on NFL page
 - ✅ LLM endpoints: Event analysis + sentiment
 - ✅ Background scheduler: Configurable intervals, conditional scheduling
 - ✅ Security: SQL injection fixed, timezone validation, input validation
@@ -544,21 +545,56 @@ For deeper understanding, consult:
 - ✅ ML integrity: Lookahead bias fixed, per-symbol train/test splits
 - ✅ Dynamic discovery: `/symbols/available`, `/horizons/available`, `/sources/available`
 - ✅ Developer experience: Zero-config `./run-dev.sh`, clean shutdown
+- ✅ Database schema: Added `projections` table for external NFL projections
 
-**Recent Fixes (December 2025):**
-- Fixed SQL injection vulnerability in RSS ingestion
-- Fixed ML training lookahead bias (< as_of)
-- Fixed NFL Elo scheduler conditional execution
-- Implemented batch database operations
-- Added comprehensive input validation
-- Created dynamic frontend discovery system
-- Curated RSS feeds to market-relevant sources only
+**Recent Fixes (December 5, 2025):**
+- **Frontend Reorganization**: Separated single confusing dashboard into dedicated domain pages
+  - `/` - Clean landing page with navigation cards
+  - `/crypto` - Crypto forecasts with crypto-specific events
+  - `/nfl` - NFL projections with sports-specific events
+  - `/events` - Full event feed with filtering
+  - Updated navigation: Home, Crypto, NFL, Events
+- **Database Schema**: Added missing `projections` table to `db/init.sql`
+  - Stores external projection data (NFL win probabilities, etc.)
+  - Includes game_id, opponent info, and metadata
+  - Indexed for efficient symbol/metric queries
+- **UI Improvements**: Better help messages for missing data (API key setup instructions)
+
+**Known Issues & TODOs:**
+
+1. **NFL Projections Setup Required** ⚠️
+   - The `projections` table exists but is empty
+   - Requires `BAKER_API_KEY` environment variable (from sportsdata.io)
+   - Setup instructions:
+     ```bash
+     # Add to backend/.env
+     BAKER_API_KEY=your-key-here
+
+     # Run ingestion
+     cd backend && uv run python -m ingest.baker_projections
+     ```
+   - UI now displays helpful setup message when projections are unavailable
+
+2. **Table Name Inconsistency** ⚠️
+   - Code uses both `projections` and `asset_projections` tables
+   - `asset_projections.py` creates and uses `asset_projections` table
+   - `db/init.sql` defines `projections` table
+   - Need to standardize on one table name (recommend `projections`)
+   - May need to migrate `asset_projections` → `projections` or update code
+
+3. **Connection Pool Cleanup Warnings**
+   - Python scripts show thread cleanup warnings on exit
+   - Not critical but should be addressed for cleaner logs
+   - Solution: Explicitly close connection pool after operations
 
 **Next Steps:**
-- ML forecaster beyond baseline (XGBoost/LightGBM)
-- Production deployment (Railway/Render + Vercel)
-- Backtesting framework
-- Model registry and A/B testing
-- Structured logging (replace print statements)
-- Rate limiting middleware
-- Integration tests
+- [ ] Resolve projections table naming inconsistency
+- [ ] Add BAKER_API_KEY to documentation and .env.example
+- [ ] Fix connection pool cleanup warnings
+- [ ] ML forecaster beyond baseline (XGBoost/LightGBM)
+- [ ] Production deployment (Railway/Render + Vercel)
+- [ ] Backtesting framework
+- [ ] Model registry and A/B testing
+- [ ] Structured logging (replace print statements)
+- [ ] Rate limiting middleware
+- [ ] Integration tests
