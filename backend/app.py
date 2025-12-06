@@ -523,68 +523,62 @@ def get_similar_events(
 ) -> Dict[str, Any]:
     """
     Return nearest neighbors in embedding space for a given event_id.
+    Uses vector store (Weaviate or PostgreSQL pgvector).
     """
+    from vector_store import get_vector_store
+
+    # Get vector for the anchor event
+    vector_store = get_vector_store()
+    query_vector = vector_store.get_vector(event_id)
+
+    if not query_vector:
+        raise HTTPException(
+            status_code=404,
+            detail="Event not found or has no embedding",
+        )
+
+    # Search for similar vectors
+    results = vector_store.search(
+        query_vector=query_vector,
+        limit=limit,
+        exclude_id=event_id,
+    )
+
+    # Get full event metadata from PostgreSQL for each result
+    event_ids = [r.event_id for r in results]
+
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # Fetch anchor embedding
-            cur.execute(
-                "SELECT embed FROM events WHERE id = %s",
-                (event_id,),
-            )
-            row = cur.fetchone()
-
-            if not row:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Event not found or has no embedding",
-                )
-
-            row_dict = dict(row)
-            if row_dict["embed"] is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Event not found or has no embedding",
-                )
-
-            anchor_embed = row_dict["embed"]
-
-            # Find neighbors
             cur.execute(
                 """
-                SELECT
-                    id,
-                    timestamp,
-                    source,
-                    url,
-                    raw_text,
-                    categories,
-                    tags,
-                    embed <-> %s::vector AS distance
+                SELECT id, timestamp, source, url, raw_text, categories, tags
                 FROM events
-                WHERE id <> %s
-                ORDER BY embed <-> %s::vector
-                LIMIT %s
+                WHERE id = ANY(%s)
                 """,
-                (anchor_embed, event_id, anchor_embed, limit),
+                (event_ids,),
             )
-
             rows = cur.fetchall()
 
+    # Build metadata map
+    metadata_map = {str(row["id"]): row for row in rows}
+
+    # Merge vector search results with PostgreSQL metadata
     neighbors: List[Neighbor] = []
-    for r in rows:
-        rd: Dict[str, Any] = dict(r)
-        neighbors.append(
-            Neighbor(
-                id=str(rd["id"]),
-                timestamp=rd["timestamp"],
-                source=rd["source"],
-                url=rd["url"],
-                raw_text=rd["raw_text"],
-                categories=rd["categories"] or [],
-                tags=rd["tags"] or [],
-                distance=float(rd["distance"]),
+    for result in results:
+        metadata = metadata_map.get(result.event_id)
+        if metadata:
+            neighbors.append(
+                Neighbor(
+                    id=result.event_id,
+                    timestamp=metadata["timestamp"],
+                    source=metadata["source"],
+                    url=metadata["url"],
+                    raw_text=metadata["raw_text"],
+                    categories=metadata["categories"] or [],
+                    tags=metadata["tags"] or [],
+                    distance=result.distance,
+                )
             )
-        )
 
     return {"event_id": str(event_id), "neighbors": neighbors}
 
