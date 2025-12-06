@@ -227,15 +227,23 @@ def prepare_event_data(entry, source: str, url: str, domain: str) -> Tuple[uuid4
         embed_literal,
     ]
 
-    return event_id, values
+    # Return event_id, postgres values, vector, and metadata for vector store
+    vector_metadata = {
+        "timestamp": ts,
+        "source": source,
+        "categories": categories,
+        "tags": tags,
+    }
+
+    return event_id, values, embed_vector, vector_metadata
 
 
-def insert_events_batch(events_data: List[Tuple[uuid4, List]]) -> int:
+def insert_events_batch(events_data: List[Tuple]) -> int:
     """
-    Batch insert events into the database.
+    Batch insert events into the database and vector store.
 
     Args:
-        events_data: List of (event_id, values) tuples from prepare_event_data
+        events_data: List of (event_id, values, vector, metadata) tuples from prepare_event_data
 
     Returns:
         Number of successfully inserted events
@@ -258,7 +266,9 @@ def insert_events_batch(events_data: List[Tuple[uuid4, List]]) -> int:
     ]
 
     from psycopg import sql
+    from vector_store import get_vector_store
 
+    # Step 1: Insert metadata into PostgreSQL
     inserted = 0
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -270,18 +280,30 @@ def insert_events_batch(events_data: List[Tuple[uuid4, List]]) -> int:
 
             try:
                 # Insert all at once
-                cur.executemany(query, [values for _, values in events_data])
+                cur.executemany(query, [values for _, values, _, _ in events_data])
                 inserted = len(events_data)
-                print(f"[ingest] ✓ Batch inserted {inserted} events")
+                print(f"[ingest] ✓ Batch inserted {inserted} events to PostgreSQL")
             except Exception as e:
                 print(f"[ingest] ✗ Batch insert failed: {e}")
                 # Fallback to individual inserts
-                for event_id, values in events_data:
+                for event_id, values, _, _ in events_data:
                     try:
                         cur.execute(query, values)
                         inserted += 1
                     except Exception as inner_e:
                         print(f"[ingest] ✗ Failed to insert {event_id}: {inner_e}")
+
+    # Step 2: Insert vectors into vector store (Weaviate or PostgreSQL)
+    try:
+        vector_store = get_vector_store()
+        vectors = [
+            (event_id, vector, metadata)
+            for event_id, _, vector, metadata in events_data
+        ]
+        vector_store.insert_batch(vectors)
+    except Exception as e:
+        print(f"[ingest] ⚠️  Vector store insertion failed: {e}")
+        # Continue anyway - vectors can be backfilled later
 
     return inserted
 

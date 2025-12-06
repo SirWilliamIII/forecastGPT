@@ -6,6 +6,7 @@ from typing import Generator
 import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
+from pgvector.psycopg import register_vector
 
 DB_DSN = os.getenv(
     "DATABASE_URL",
@@ -19,6 +20,11 @@ POOL_TIMEOUT = float(os.getenv("DB_POOL_TIMEOUT", "5.0"))
 _pool: ConnectionPool | None = None
 
 
+def _configure_connection(conn: psycopg.Connection) -> None:
+    """Configure each connection with pgvector support."""
+    register_vector(conn)
+
+
 def _get_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
@@ -28,6 +34,7 @@ def _get_pool() -> ConnectionPool:
             max_size=POOL_MAX_SIZE,
             timeout=POOL_TIMEOUT,
             kwargs={"row_factory": dict_row},
+            configure=_configure_connection,
         )
     return _pool
 

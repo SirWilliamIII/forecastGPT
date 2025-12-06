@@ -161,15 +161,20 @@ export default function Dashboard() {
               >
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs text-gray-500">
-                    {event.source_url ? new URL(event.source_url).hostname : "Unknown"}
+                    {event.source || "Unknown"}
                   </span>
                   <span className="text-xs text-gray-500">
                     {new Date(event.timestamp).toLocaleDateString()}
                   </span>
                 </div>
-                <p className="line-clamp-3 text-sm text-gray-300 group-hover:text-white">
-                  {event.clean_text || event.raw_text}
-                </p>
+                <h4 className="mb-1 text-sm font-medium text-gray-200 group-hover:text-white">
+                  {event.title}
+                </h4>
+                {event.summary && (
+                  <p className="line-clamp-2 text-xs text-gray-400">
+                    {event.summary}
+                  </p>
+                )}
               </Link>
             ))}
           </div>

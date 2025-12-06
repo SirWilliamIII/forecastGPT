@@ -78,48 +78,66 @@ def build_return_samples_for_event(
          whose as_of is in [neighbor_ts, neighbor_ts + price_window_minutes].
       4. Return a list of (distance, realized_return).
     """
+    from vector_store import get_vector_store
+
     samples: List[Tuple[float, float]] = []
 
+    # Get anchor event timestamp
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # 1) anchor event
             cur.execute(
                 """
-                SELECT timestamp, embed
+                SELECT timestamp
                 FROM events
                 WHERE id = %s
                 """,
                 (event_id,),
             )
             row = cur.fetchone()
-            if not row or row["embed"] is None:
+            if not row:
                 return []
 
             anchor_ts = row["timestamp"]
-            anchor_embed = row["embed"]
 
+    # Get anchor vector from vector store
+    vector_store = get_vector_store()
+    query_vector = vector_store.get_vector(event_id)
+    if not query_vector:
+        return []
+
+    # Search for nearest neighbors
+    results = vector_store.search(
+        query_vector=query_vector,
+        limit=k_neighbors,
+        exclude_id=event_id,
+    )
+
+    if not results:
+        return []
+
+    # Get neighbor IDs and fetch their timestamps
+    neighbor_ids = [r.event_id for r in results]
+    distance_map = {r.event_id: r.distance for r in results}
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Get neighbor timestamps (with lookback filter)
             start_ts = anchor_ts - timedelta(days=lookback_days)
-
-            # 2) nearest neighbors in embedding space, time-bounded
             cur.execute(
                 """
-                SELECT
-                    id,
-                    timestamp,
-                    embed <-> %s::vector AS distance
+                SELECT id, timestamp
                 FROM events
-                WHERE id <> %s
+                WHERE id = ANY(%s)
                   AND timestamp BETWEEN %s AND %s
-                ORDER BY embed <-> %s::vector
-                LIMIT %s
                 """,
-                (anchor_embed, event_id, start_ts, anchor_ts, anchor_embed, k_neighbors),
+                (neighbor_ids, start_ts, anchor_ts),
             )
             neighbors = cur.fetchall()
 
-            # 3) for each neighbor, get realized_return after its timestamp
+            # For each neighbor, get realized_return after its timestamp
             for n in neighbors:
-                dist = float(n["distance"])
+                event_uuid = str(n["id"])
+                dist = distance_map.get(event_uuid, 0.0)
                 ts = n["timestamp"]
                 window_end = ts + timedelta(minutes=price_window_minutes)
 
