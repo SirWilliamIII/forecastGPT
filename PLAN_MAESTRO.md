@@ -391,7 +391,7 @@ For a single event:
 ### **6.1 Backend Containerization**
 
 - Dockerfile for backend/
-- Deploy to Railway / Render / similar PaaS.
+- Deploy to Render / Fly.io / similar PaaS.
 - .env template including DB and LLM provider keys.
 
 ### **6.2 CI/CD**

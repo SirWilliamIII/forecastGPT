@@ -592,7 +592,7 @@ For deeper understanding, consult:
 - [ ] Add BAKER_API_KEY to documentation and .env.example
 - [ ] Fix connection pool cleanup warnings
 - [ ] ML forecaster beyond baseline (XGBoost/LightGBM)
-- [ ] Production deployment (Railway/Render + Vercel)
+- [ ] Production deployment (Render/Fly.io + Vercel)
 - [ ] Backtesting framework
 - [ ] Model registry and A/B testing
 - [ ] Structured logging (replace print statements)
