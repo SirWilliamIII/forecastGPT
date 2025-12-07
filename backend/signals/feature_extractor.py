@@ -122,10 +122,11 @@ def build_return_samples_for_event(
     with get_conn() as conn:
         with conn.cursor() as cur:
             # Get neighbor timestamps (with lookback filter)
+            # Also fetch text for symbol filtering
             start_ts = anchor_ts - timedelta(days=lookback_days)
             cur.execute(
                 """
-                SELECT id, timestamp
+                SELECT id, timestamp, title, summary, clean_text
                 FROM events
                 WHERE id = ANY(%s)
                   AND timestamp BETWEEN %s AND %s
@@ -134,8 +135,25 @@ def build_return_samples_for_event(
             )
             neighbors = cur.fetchall()
 
-            # For each neighbor, get realized_return after its timestamp
+            # Apply symbol-specific filtering for crypto symbols
+            # This ensures BTC forecasts use BTC events, ETH uses ETH, etc.
+            from signals.crypto_features import is_symbol_mentioned
+
+            filtered_neighbors = []
             for n in neighbors:
+                # Build text to check
+                text_to_check = " ".join(filter(None, [
+                    n.get('title', ''),
+                    n.get('summary', ''),
+                    n.get('clean_text', ''),
+                ]))
+
+                # Check if this event mentions the symbol
+                if is_symbol_mentioned(text_to_check, symbol):
+                    filtered_neighbors.append(n)
+
+            # For each neighbor, get realized_return after its timestamp
+            for n in filtered_neighbors:
                 event_uuid = str(n["id"])
                 dist = distance_map.get(event_uuid, 0.0)
                 ts = n["timestamp"]

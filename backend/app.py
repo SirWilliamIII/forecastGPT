@@ -247,10 +247,35 @@ class ProjectionOut(BaseModel):
     projected_value: float
     model_source: str
     game_id: Optional[int] = None
-    run_id: Optional[str] = None
+
+
+class NFLEventForecastOut(BaseModel):
+    """NFL event-based forecast response"""
+    event_id: str
+    team_symbol: str
+    next_game_date: Optional[datetime]
+    opponent: Optional[str]
+    days_until_game: Optional[float]
+    win_probability: Optional[float]
+    expected_point_diff: Optional[float]
+    confidence: float
+    similar_events_found: int
+    sample_size: int
+    forecast_available: bool
+    no_game_reason: Optional[str] = None
+
+
+class NFLTeamForecastOut(BaseModel):
+    """Team next game forecast with events"""
+    team_symbol: str
+    next_game_found: bool
+    game_date: Optional[datetime] = None
+    days_until_game: Optional[float] = None
     opponent: Optional[str] = None
-    opponent_name: Optional[str] = None
-    meta: Optional[Dict[str, Any]] = None
+    event_forecasts_count: int = 0
+    aggregated_win_probability: Optional[float] = None
+    forecast_confidence: Optional[float] = None
+    message: Optional[str] = None
 
 
 class AssetForecastOut(BaseModel):
@@ -679,6 +704,118 @@ def forecast_event_endpoint(
         p_down=result.p_down,
         sample_size=result.sample_size,
         neighbors_used=result.neighbors_used,
+    )
+
+
+# ---------------------------------------------------------------------
+# NFL Forecasting
+# ---------------------------------------------------------------------
+
+
+@app.get("/forecast/nfl/event/{event_id}", response_model=NFLEventForecastOut)
+def forecast_nfl_event_endpoint(
+    event_id: UUID,
+    team_symbol: str = Query(..., regex="^NFL:[A-Z_]+$", description="Team symbol (e.g., NFL:DAL_COWBOYS)"),
+    k_neighbors: int = Query(25, ge=1, le=100, description="Number of similar events to use"),
+    lookback_days: int = Query(365, ge=30, le=1095, description="Days to look back for similar events"),
+) -> NFLEventForecastOut:
+    """
+    Forecast how a sports event will affect a team's next game outcome.
+
+    This endpoint uses semantic similarity to find similar historical events
+    and predicts the likely game outcome based on what happened after those events.
+
+    **How it works:**
+    1. Finds the team's next scheduled game after the event
+    2. Searches for semantically similar historical events
+    3. Looks at game outcomes after those similar events
+    4. Returns a weighted prediction of win probability
+
+    **Example:**
+    - Event: "Cowboys QB Dak Prescott injured in practice"
+    - System finds similar injury events from the past
+    - Checks Cowboys' win rate after those events
+    - Returns: 35% win probability (injuries typically hurt performance)
+    """
+    from models.nfl_event_forecaster import forecast_nfl_event
+
+    result = forecast_nfl_event(
+        event_id=event_id,
+        team_symbol=team_symbol,
+        k_neighbors=k_neighbors,
+        lookback_days=lookback_days,
+    )
+
+    return NFLEventForecastOut(
+        event_id=str(result.event_id),
+        team_symbol=result.team_symbol,
+        next_game_date=result.next_game_date,
+        opponent=result.opponent,
+        days_until_game=result.days_until_game,
+        win_probability=result.win_probability,
+        expected_point_diff=result.expected_point_diff,
+        confidence=result.confidence,
+        similar_events_found=result.similar_events_found,
+        sample_size=result.sample_size,
+        forecast_available=result.forecast_available,
+        no_game_reason=result.no_game_reason,
+    )
+
+
+@app.get("/forecast/nfl/team/{team_symbol}/next-game", response_model=NFLTeamForecastOut)
+def forecast_team_next_game_endpoint(
+    team_symbol: str,
+    include_recent_events: bool = Query(True, description="Include forecasts from recent events"),
+    max_event_age_days: int = Query(7, ge=1, le=30, description="Max days back to look for events"),
+) -> NFLTeamForecastOut:
+    """
+    Get a comprehensive forecast for a team's next game.
+
+    This endpoint:
+    1. Finds the team's next scheduled game
+    2. Identifies recent sports events related to the team
+    3. Generates win probability forecasts from each event
+    4. Aggregates them into a single prediction
+
+    **Use case:** Dynamic dashboard that updates as new events occur
+
+    **Example response:**
+    ```json
+    {
+      "team_symbol": "NFL:DAL_COWBOYS",
+      "next_game_found": true,
+      "game_date": "2024-11-24T18:00:00Z",
+      "days_until_game": 3.5,
+      "opponent": "WAS",
+      "event_forecasts_count": 4,
+      "aggregated_win_probability": 0.62,
+      "forecast_confidence": 0.75
+    }
+    ```
+
+    **Interpretation:**
+    - Based on 4 recent events (injuries, roster moves, etc.)
+    - System predicts 62% chance Cowboys win
+    - 75% confidence in this prediction
+    """
+    from models.nfl_event_forecaster import forecast_team_next_game
+
+    result = forecast_team_next_game(
+        team_symbol=team_symbol,
+        include_recent_events=include_recent_events,
+        max_event_age_days=max_event_age_days,
+    )
+
+    return NFLTeamForecastOut(
+        team_symbol=result["team_symbol"],
+        next_game_found=result["next_game_found"],
+        game_date=result.get("game_date"),
+        days_until_game=result.get("days_until_game"),
+        opponent=result.get("opponent"),
+        event_forecasts_count=result.get("event_forecasts_count", 0),
+        aggregated_win_probability=result.get("aggregated_win_probability"),
+        forecast_confidence=result.get("forecast_confidence"),
+        message=result.get("message"),
     )
 
 

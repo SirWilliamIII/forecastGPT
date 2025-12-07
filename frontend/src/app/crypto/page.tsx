@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   RefreshCw,
@@ -19,6 +19,7 @@ import {
   getAvailableHorizons,
   type AvailableHorizon,
 } from "@/lib/api";
+import { filterEventsBySymbol, getSymbolInfo } from "@/lib/symbolFilters";
 
 export default function CryptoPage() {
   const [symbol, setSymbol] = useState<string>("BTC-USD");
@@ -80,6 +81,15 @@ export default function CryptoPage() {
       }
     }
   }, [horizonsData, horizon]);
+
+  // Filter events by selected symbol
+  const filteredEvents = useMemo(() => {
+    if (!events) return [];
+    return filterEventsBySymbol(events, symbol);
+  }, [events, symbol]);
+
+  // Get symbol styling info
+  const symbolInfo = useMemo(() => getSymbolInfo(symbol), [symbol]);
 
   return (
     <div className="space-y-6">
@@ -185,7 +195,7 @@ export default function CryptoPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Newspaper className="h-4 w-4 text-blue-400" />
-              <h2 className="font-semibold">Crypto Events</h2>
+              <h2 className="font-semibold">{symbolInfo.label} Events</h2>
             </div>
             <a
               href="/events"
@@ -195,10 +205,17 @@ export default function CryptoPage() {
             </a>
           </div>
 
-          <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-3">
-            <p className="text-xs text-gray-400">
-              Showing cryptocurrency and blockchain news events
-            </p>
+          <div className={`rounded-lg border ${symbolInfo.borderColor} p-3`} style={{ backgroundColor: symbolInfo.bgColor.replace('/20', '/5') }}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-gray-400">
+                Showing events mentioning <span className={`font-semibold ${symbolInfo.color}`}>{symbolInfo.label}</span>
+              </p>
+              {events && events.length > 0 && (
+                <span className="text-xs text-gray-500">
+                  {filteredEvents.length}/{events.length}
+                </span>
+              )}
+            </div>
           </div>
 
           <button
@@ -220,8 +237,15 @@ export default function CryptoPage() {
                 </div>
               ))}
             </div>
+          ) : filteredEvents && filteredEvents.length > 0 ? (
+            <EventList events={filteredEvents} showSymbolBadges={true} />
           ) : events && events.length > 0 ? (
-            <EventList events={events} />
+            <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4 text-center text-sm text-gray-500">
+              No {symbolInfo.label}-specific events found.
+              <p className="mt-1 text-xs">
+                {events.length} crypto events available, none mention {symbolInfo.label}.
+              </p>
+            </div>
           ) : (
             <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-4 text-center text-sm text-gray-500">
               No crypto events found.

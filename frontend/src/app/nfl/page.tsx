@@ -10,10 +10,12 @@ import {
 } from "lucide-react";
 import { EventList } from "@/components/EventList";
 import { ProjectionCard } from "@/components/ProjectionCard";
+import { NFLEventForecast } from "@/components/NFLEventForecast";
 import {
   getRecentEvents,
   getLatestProjections,
   getProjectionTeams,
+  getNFLTeamForecast,
 } from "@/lib/api";
 
 export default function NFLPage() {
@@ -49,6 +51,17 @@ export default function NFLPage() {
     gcTime: 24 * 60 * 60 * 1000,
   });
 
+  const {
+    data: eventForecast,
+    isLoading: forecastLoading,
+    refetch: refetchForecast,
+  } = useQuery({
+    queryKey: ["nfl-event-forecast", projectionSymbol],
+    queryFn: () => getNFLTeamForecast(projectionSymbol, true),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
   useEffect(() => {
     if (teamsData && Object.keys(teamsData).length > 0) {
       setProjectionTeams(teamsData);
@@ -72,6 +85,14 @@ export default function NFLPage() {
           </div>
         </div>
       </header>
+
+      {/* Event-Based Forecast Section */}
+      <section>
+        <NFLEventForecast
+          forecast={eventForecast}
+          isLoading={forecastLoading}
+        />
+      </section>
 
       {/* Main Grid */}
       <div className="grid gap-8 xl:grid-cols-3">

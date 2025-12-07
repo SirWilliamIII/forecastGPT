@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { formatDistanceToNow } from "@/lib/utils";
 import type { EventSummary } from "@/types/api";
+import { detectMentionedSymbols, getSymbolInfo } from "@/lib/symbolFilters";
 
 interface EventListProps {
   events: EventSummary[];
+  showSymbolBadges?: boolean;
 }
 
-export function EventList({ events }: EventListProps) {
+export function EventList({ events, showSymbolBadges = false }: EventListProps) {
   if (events.length === 0) {
     return (
       <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-8 text-center">
@@ -20,13 +22,13 @@ export function EventList({ events }: EventListProps) {
   return (
     <div className="space-y-3">
       {events.map((event) => (
-        <EventCard key={event.id} event={event} />
+        <EventCard key={event.id} event={event} showSymbolBadges={showSymbolBadges} />
       ))}
     </div>
   );
 }
 
-function EventCard({ event }: { event: EventSummary }) {
+function EventCard({ event, showSymbolBadges = false }: { event: EventSummary; showSymbolBadges?: boolean }) {
   // Extract URL from summary if it contains HTML link
   const extractUrlFromSummary = (summary: string): string | null => {
     const hrefMatch = summary.match(/href="([^"]+)"/);
@@ -40,6 +42,11 @@ function EventCard({ event }: { event: EventSummary }) {
 
   const summaryUrl = extractUrlFromSummary(event.summary);
   const displaySummary = cleanSummary(event.summary);
+
+  // Detect mentioned symbols for badges
+  const mentionedSymbols = showSymbolBadges
+    ? detectMentionedSymbols(`${event.title} ${event.summary}`)
+    : [];
 
   return (
     <div className="group rounded-xl border border-gray-700 bg-gray-800/50 p-4 transition-colors hover:border-blue-500/50 hover:bg-gray-800">
@@ -73,6 +80,24 @@ function EventCard({ event }: { event: EventSummary }) {
         </div>
       </div>
 
+      {/* Symbol badges */}
+      {showSymbolBadges && mentionedSymbols.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {mentionedSymbols.map((symbol) => {
+            const info = getSymbolInfo(symbol);
+            return (
+              <span
+                key={symbol}
+                className={`rounded px-2 py-0.5 text-xs font-medium ${info.color} ${info.bgColor} border ${info.borderColor}`}
+              >
+                {info.label}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Tags */}
       {event.tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1">
           {event.tags.slice(0, 3).map((tag) => (

@@ -108,3 +108,26 @@ export const HORIZONS = [
   { value: 60, label: "1 hour", available: false },
   { value: 10080, label: "1 week", available: false },
 ] as const;
+
+// NFL Event-Based Forecasting
+export interface NFLEventForecast {
+  event_id: string;
+  event_title: string;
+  event_date: string;
+  win_probability: number;
+  confidence: number;
+  similar_events: number;
+}
+
+export interface NFLTeamForecast {
+  team_symbol: string;
+  next_game_found: boolean;
+  game_date: string | null;
+  days_until_game: number | null;
+  opponent: string | null;
+  event_forecasts_count: number;
+  event_forecasts?: NFLEventForecast[];
+  aggregated_win_probability: number | null;
+  forecast_confidence: number | null;
+  message: string | null;
+}

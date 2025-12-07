@@ -8,6 +8,7 @@ import type {
   EventAnalysis,
   HealthCheck,
   Projection,
+  NFLTeamForecast,
 } from "@/types/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
@@ -114,6 +115,19 @@ export async function getLatestProjections(
 
 export async function getProjectionTeams(): Promise<Record<string, string>> {
   return fetchJson<Record<string, string>>(`${API_BASE}/projections/teams`);
+}
+
+// NFL Event-Based Forecasting
+export async function getNFLTeamForecast(
+  teamSymbol: string,
+  includeRecentEvents = true
+): Promise<NFLTeamForecast> {
+  const params = new URLSearchParams({
+    include_recent_events: String(includeRecentEvents),
+  });
+  return fetchJson<NFLTeamForecast>(
+    `${API_BASE}/forecast/nfl/team/${teamSymbol}/next-game?${params}`
+  );
 }
 
 // Dynamic discovery endpoints
