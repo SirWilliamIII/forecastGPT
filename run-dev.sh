@@ -164,6 +164,17 @@ else
     success "Crypto prices already loaded ($PRICE_COUNT rows)"
 fi
 
+# Backfill NFL game outcomes if not present
+log "Checking NFL game data..."
+NFL_COUNT=$($CONTAINER_CMD exec semantic_db psql -U semantic -d semantic_markets -t -c "SELECT COUNT(*) FROM asset_returns WHERE symbol LIKE 'NFL:%';" 2>/dev/null | tr -d ' ')
+if [[ "$NFL_COUNT" == "0" || -z "$NFL_COUNT" ]]; then
+    log "Backfilling NFL outcomes (all configured teams, first run)..."
+    uv run python -m ingest.backfill_nfl_outcomes 2>&1 | grep -E "^\[nfl_backfill\]" || true
+    success "NFL game data loaded!"
+else
+    success "NFL game data already loaded ($NFL_COUNT games)"
+fi
+
 # Start uvicorn in background (RSS ingest runs on startup via scheduler)
 # Use setsid to create new process group so we can kill all children
 set -m  # Enable job control
@@ -229,6 +240,10 @@ echo -e "  ${GREEN}✓${NC} Database:  http://localhost:5433"
 echo -e "  ${GREEN}✓${NC} Adminer:   http://localhost:8080"
 echo -e "  ${GREEN}✓${NC} Backend:   http://localhost:9000"
 echo -e "  ${GREEN}✓${NC} Frontend:  http://localhost:3000"
+echo -e "${GREEN}══════════════════════════════════════════${NC}"
+echo -e "  Crypto forecasts:  /crypto"
+echo -e "  NFL forecasts:     /nfl"
+echo -e "  Event feed:        /events"
 echo -e "${GREEN}══════════════════════════════════════════${NC}"
 echo ""
 echo -e "Press ${YELLOW}Ctrl+C${NC} to stop all services"

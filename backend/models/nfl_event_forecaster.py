@@ -14,6 +14,12 @@ from uuid import UUID
 
 from models.event_return_forecaster import forecast_event_return
 from signals.nfl_features import find_next_game, find_previous_game
+from config import (
+    NFL_MAX_DAYS_AHEAD,
+    NFL_CONFIDENCE_SAMPLE_THRESHOLD,
+    NFL_CONFIDENCE_SNR_THRESHOLD,
+    NFL_POINT_DIFF_SCALE,
+)
 
 
 @dataclass
@@ -124,7 +130,7 @@ def forecast_nfl_event(
         event_timestamp = event_timestamp.replace(tzinfo=timezone.utc)
 
     # Find next game after this event
-    next_game = find_next_game(team_symbol, event_timestamp, max_days_ahead=30)
+    next_game = find_next_game(team_symbol, event_timestamp, max_days_ahead=NFL_MAX_DAYS_AHEAD)
 
     if not next_game:
         return NFLEventForecastResult(
@@ -168,16 +174,16 @@ def forecast_nfl_event(
     # Calculate confidence based on sample size and std
     # Low sample size = low confidence
     # High variance = low confidence
-    confidence = min(1.0, result.sample_size / 20.0)  # Scale by expected sample size
+    confidence = min(1.0, result.sample_size / NFL_CONFIDENCE_SAMPLE_THRESHOLD)
     if result.sample_size > 0 and result.std_return > 0:
         # Penalize high variance (uncertain outcomes)
         signal_to_noise = abs(result.expected_return) / (result.std_return + 0.01)
-        confidence *= min(1.0, signal_to_noise / 2.0)
+        confidence *= min(1.0, signal_to_noise / NFL_CONFIDENCE_SNR_THRESHOLD)
 
     # Expected point differential (rough estimate)
     # This is speculative - the system tracks win/loss, not exact scores
     # But we can estimate based on historical point differentials
-    expected_point_diff = result.expected_return * 10.0  # Rough scaling
+    expected_point_diff = result.expected_return * NFL_POINT_DIFF_SCALE
 
     return NFLEventForecastResult(
         event_id=event_id,

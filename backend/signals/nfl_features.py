@@ -12,6 +12,7 @@ from typing import List, Optional, Dict
 from uuid import UUID
 
 from db import get_conn
+from config import NFL_MAX_DAYS_AHEAD, NFL_MAX_DAYS_BEFORE_GAME, NFL_MIN_DAYS_BEFORE_GAME
 
 
 @dataclass
@@ -26,8 +27,8 @@ class GameInfo:
     point_differential: Optional[float]  # Actual outcome if game completed
 
 
-# Team name variations for matching
-TEAM_MENTION_PATTERNS = {
+# Team name variations for matching (raw patterns)
+_TEAM_MENTION_PATTERNS_RAW = {
     "NFL:DAL_COWBOYS": [
         r"\bCowboys?\b",
         r"\bDallas\b",
@@ -40,26 +41,77 @@ TEAM_MENTION_PATTERNS = {
         r"\bChiefs?\b",
         r"\bKansas\s+City\b",
         r"\bKC\b",
-        r"\bPatrick\s+Mahomes\b",
+        r"\bPatrick\s+Mahomes\b",  # QB
+        r"\bTravis\s+Kelce\b",     # Star TE
     ],
     "NFL:SF_49ERS": [
         r"\b49ers?\b",
         r"\bSan\s+Francisco\b",
         r"\bNiners?\b",
         r"\bSF\b",
+        r"\bBrock\s+Purdy\b",     # QB
     ],
     "NFL:PHI_EAGLES": [
         r"\bEagles?\b",
         r"\bPhiladelphia\b",
         r"\bPHI\b",
+        r"\bJalen\s+Hurts\b",     # QB
+    ],
+    "NFL:BUF_BILLS": [
+        r"\bBills?\b",
+        r"\bBuffalo\b",
+        r"\bBUF\b",
+        r"\bJosh\s+Allen\b",      # QB
+        r"\bStefon\s+Diggs\b",    # Star WR (note: may have moved, but historically relevant)
+    ],
+    "NFL:DET_LIONS": [
+        r"\bLions?\b",
+        r"\bDetroit\b",
+        r"\bDET\b",
+        r"\bJared\s+Goff\b",      # QB
+        r"\bAmon-Ra\s+St\.\s+Brown\b",  # Star WR
     ],
 }
+
+# Pre-compiled regex patterns for performance
+TEAM_MENTION_PATTERNS = {
+    team: [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+    for team, patterns in _TEAM_MENTION_PATTERNS_RAW.items()
+}
+
+
+def get_team_regex_pattern(team_symbol: str) -> Optional[str]:
+    r"""
+    Get combined PostgreSQL regex pattern for a team.
+    Returns pattern like: '(Cowboys?|Dallas|DAL|Dak\s+Prescott|...)'
+
+    This is used for database-side filtering with PostgreSQL ~* operator.
+
+    Args:
+        team_symbol: Team symbol (e.g., "NFL:DAL_COWBOYS")
+
+    Returns:
+        Combined regex pattern, or None if team not found
+    """
+    raw_patterns = _TEAM_MENTION_PATTERNS_RAW.get(team_symbol, [])
+    if not raw_patterns:
+        return None
+
+    # Combine patterns with OR (remove \b word boundaries, PostgreSQL uses different syntax)
+    # PostgreSQL ~* is case-insensitive by default
+    cleaned_patterns = []
+    for pattern in raw_patterns:
+        # Remove \b word boundaries (PostgreSQL uses [[:<:]] and [[:>:]] but not needed for ~*)
+        cleaned = pattern.replace(r'\b', '')
+        cleaned_patterns.append(cleaned)
+
+    return '(' + '|'.join(cleaned_patterns) + ')'
 
 
 def find_next_game(
     team_symbol: str,
     reference_time: datetime,
-    max_days_ahead: int = 30,
+    max_days_ahead: int = NFL_MAX_DAYS_AHEAD,
 ) -> Optional[GameInfo]:
     """
     Find the next scheduled game for a team after a reference time.
@@ -219,7 +271,7 @@ def is_team_mentioned(
     Args:
         event_text: Event title/summary text
         team_symbol: Team symbol (e.g., "NFL:DAL_COWBOYS")
-        case_sensitive: Whether to use case-sensitive matching
+        case_sensitive: Whether to use case-sensitive matching (ignored - patterns are pre-compiled with IGNORECASE)
 
     Returns:
         True if team is mentioned, False otherwise
@@ -228,10 +280,10 @@ def is_team_mentioned(
     if not patterns:
         return False
 
-    flags = 0 if case_sensitive else re.IGNORECASE
-
+    # Patterns are pre-compiled with IGNORECASE flag
+    # case_sensitive parameter is now ignored for performance
     for pattern in patterns:
-        if re.search(pattern, event_text, flags):
+        if pattern.search(event_text):
             return True
 
     return False
@@ -239,8 +291,8 @@ def is_team_mentioned(
 
 def get_events_for_next_game(
     team_symbol: str,
-    max_days_before: int = 7,
-    min_days_before: int = 0,
+    max_days_before: int = NFL_MAX_DAYS_BEFORE_GAME,
+    min_days_before: int = NFL_MIN_DAYS_BEFORE_GAME,
     reference_time: Optional[datetime] = None,
 ) -> List[Dict]:
     """
@@ -269,47 +321,72 @@ def get_events_for_next_game(
     event_window_start = next_game.game_date - timedelta(days=max_days_before)
     event_window_end = next_game.game_date - timedelta(days=min_days_before)
 
+    # Get PostgreSQL regex pattern for team (database-side filtering)
+    team_pattern = get_team_regex_pattern(team_symbol)
+
     with get_conn() as conn:
         with conn.cursor() as cur:
-            # Get sports events in window
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    timestamp,
-                    title,
-                    summary,
-                    clean_text,
-                    categories
-                FROM events
-                WHERE timestamp BETWEEN %s AND %s
-                  AND 'sports' = ANY(categories)
-                ORDER BY timestamp DESC
-                """,
-                (event_window_start, event_window_end),
-            )
+            if team_pattern:
+                # OPTIMIZED: Use PostgreSQL regex filtering to reduce data transfer
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        timestamp,
+                        title,
+                        summary,
+                        clean_text,
+                        categories
+                    FROM events
+                    WHERE timestamp BETWEEN %s AND %s
+                      AND 'sports' = ANY(categories)
+                      AND (title ~* %s OR summary ~* %s OR clean_text ~* %s)
+                    ORDER BY timestamp DESC
+                    """,
+                    (event_window_start, event_window_end, team_pattern, team_pattern, team_pattern),
+                )
+            else:
+                # Fallback: Load all sports events and filter in Python
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        timestamp,
+                        title,
+                        summary,
+                        clean_text,
+                        categories
+                    FROM events
+                    WHERE timestamp BETWEEN %s AND %s
+                      AND 'sports' = ANY(categories)
+                    ORDER BY timestamp DESC
+                    """,
+                    (event_window_start, event_window_end),
+                )
             rows = cur.fetchall()
 
-    # Filter to team-relevant events
+    # Build result list (with optional Python-side filtering as double-check)
     team_events = []
     for row in rows:
-        # Check if team is mentioned
-        text_to_check = f"{row['title']} {row['summary'] or ''} {row['clean_text'] or ''}"
+        # If we used regex in DB, trust it; otherwise filter in Python
+        if not team_pattern:
+            text_to_check = f"{row['title']} {row['summary'] or ''} {row['clean_text'] or ''}"
+            if not is_team_mentioned(text_to_check, team_symbol):
+                continue
 
-        if is_team_mentioned(text_to_check, team_symbol):
-            # Calculate time distance to game
-            distance_minutes = int((next_game.game_date - row['timestamp']).total_seconds() / 60)
+        # Calculate time distance to game
+        distance_minutes = int((next_game.game_date - row['timestamp']).total_seconds() / 60)
 
-            team_events.append({
-                'id': row['id'],
-                'timestamp': row['timestamp'],
-                'title': row['title'],
-                'summary': row['summary'],
-                'clean_text': row['clean_text'],
-                'categories': row['categories'],
-                'distance_to_game_minutes': distance_minutes,
-                'game_date': next_game.game_date,
-            })
+        team_events.append({
+            'id': row['id'],
+            'timestamp': row['timestamp'],
+            'title': row['title'],
+            'summary': row['summary'],
+            'clean_text': row['clean_text'],
+            'categories': row['categories'],
+            'distance_to_game_minutes': distance_minutes,
+            'game_date': next_game.game_date,
+        })
 
     return team_events
 
@@ -352,6 +429,9 @@ def get_historical_events_for_games(
             )
             games = cur.fetchall()
 
+    # Get PostgreSQL regex pattern for team (database-side filtering)
+    team_pattern = get_team_regex_pattern(team_symbol)
+
     game_events = []
     for game in games:
         game_date = game['as_of']
@@ -362,32 +442,55 @@ def get_historical_events_for_games(
 
         with get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT
-                        id,
-                        timestamp,
-                        title,
-                        summary,
-                        clean_text
-                    FROM events
-                    WHERE timestamp BETWEEN %s AND %s
-                      AND 'sports' = ANY(categories)
-                    """,
-                    (event_window_start, game_date),
-                )
+                if team_pattern:
+                    # OPTIMIZED: Use PostgreSQL regex filtering
+                    cur.execute(
+                        """
+                        SELECT
+                            id,
+                            timestamp,
+                            title,
+                            summary,
+                            clean_text
+                        FROM events
+                        WHERE timestamp BETWEEN %s AND %s
+                          AND 'sports' = ANY(categories)
+                          AND (title ~* %s OR summary ~* %s OR clean_text ~* %s)
+                        """,
+                        (event_window_start, game_date, team_pattern, team_pattern, team_pattern),
+                    )
+                else:
+                    # Fallback: Load all and filter in Python
+                    cur.execute(
+                        """
+                        SELECT
+                            id,
+                            timestamp,
+                            title,
+                            summary,
+                            clean_text
+                        FROM events
+                        WHERE timestamp BETWEEN %s AND %s
+                          AND 'sports' = ANY(categories)
+                        """,
+                        (event_window_start, game_date),
+                    )
                 events = cur.fetchall()
 
-        # Filter to team-relevant events
+        # Build relevant events list
         relevant_events = []
         for event in events:
-            text_to_check = f"{event['title']} {event['summary'] or ''} {event['clean_text'] or ''}"
-            if is_team_mentioned(text_to_check, team_symbol):
-                relevant_events.append({
-                    'id': event['id'],
-                    'title': event['title'],
-                    'timestamp': event['timestamp'],
-                })
+            # If we used regex in DB, trust it; otherwise filter in Python
+            if not team_pattern:
+                text_to_check = f"{event['title']} {event['summary'] or ''} {event['clean_text'] or ''}"
+                if not is_team_mentioned(text_to_check, team_symbol):
+                    continue
+
+            relevant_events.append({
+                'id': event['id'],
+                'title': event['title'],
+                'timestamp': event['timestamp'],
+            })
 
         if relevant_events:  # Only include games with relevant events
             game_events.append({

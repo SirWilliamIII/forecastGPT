@@ -24,17 +24,22 @@ if PARENT_DIR not in sys.path:
 from db import get_conn
 from numeric.asset_returns import insert_asset_return
 from utils import espn_api, pfr_scraper
+from utils.team_config import load_team_config
 from ingest.status import update_ingest_status
+from config import (
+    NFL_BACKFILL_SEASONS,
+    NFL_DEFAULT_HORIZON_MINUTES,
+    NFL_BASELINE_SCORE,
+)
 
-# Configuration
-DEFAULT_SEASONS = int(os.getenv("NFL_BACKFILL_SEASONS", "3"))
-DEFAULT_HORIZON_MINUTES = 24 * 60  # 1 day (simplification for now)
-
-# Team configuration - start with Dallas Cowboys
-COWBOYS_CONFIG = {
-    "symbol": "NFL:DAL_COWBOYS",
-    "espn_abbr": "DAL",
-    "display_name": "Dallas Cowboys",
+# Team display names mapping
+TEAM_DISPLAY_NAMES = {
+    "KC": "Kansas City Chiefs",
+    "DAL": "Dallas Cowboys",
+    "SF": "San Francisco 49ers",
+    "PHI": "Philadelphia Eagles",
+    "BUF": "Buffalo Bills",
+    "DET": "Detroit Lions",
 }
 
 
@@ -159,13 +164,12 @@ def backfill_team_outcomes(
 
     for game_date, opp_abbr, opp_name, pts_for, pts_against, is_win, is_home in games:
         # Convert outcome to "return"
-        # Use a baseline of 100 and add/subtract point differential
+        # Use a baseline score and add/subtract point differential
         # This keeps prices positive while encoding win/loss information
-        baseline = 100.0
         point_diff = float(pts_for - pts_against)
 
-        price_start = baseline
-        price_end = baseline + point_diff
+        price_start = NFL_BASELINE_SCORE
+        price_end = NFL_BASELINE_SCORE + point_diff
 
         if pts_for > pts_against:
             realized_return = 1.0  # Win
@@ -178,7 +182,7 @@ def backfill_team_outcomes(
             insert_asset_return(
                 symbol=symbol,
                 as_of=game_date,
-                horizon_minutes=DEFAULT_HORIZON_MINUTES,
+                horizon_minutes=NFL_DEFAULT_HORIZON_MINUTES,
                 price_start=price_start,
                 price_end=price_end,
             )
@@ -212,48 +216,92 @@ def backfill_team_outcomes(
 
 
 def main():
-    """Backfill Dallas Cowboys games"""
-    inserted, skipped = backfill_team_outcomes(
-        COWBOYS_CONFIG,
-        seasons=DEFAULT_SEASONS,
-        force=False,
-    )
+    """Backfill NFL games for all configured teams"""
+    # Load team configuration
+    team_map = load_team_config()
 
-    # Validate data
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT
-                    COUNT(*) as total_games,
-                    SUM(CASE WHEN realized_return > 0 THEN 1 ELSE 0 END) as wins,
-                    SUM(CASE WHEN realized_return < 0 THEN 1 ELSE 0 END) as losses,
-                    AVG(price_end) as avg_point_diff
-                FROM asset_returns
-                WHERE symbol = %s
-                """,
-                (COWBOYS_CONFIG["symbol"],),
-            )
-            stats = cur.fetchone()
+    print(f"\n{'='*60}")
+    print(f"[nfl_backfill] NFL Outcomes Backfill")
+    print(f"[nfl_backfill] Teams to process: {len(team_map)}")
+    print(f"[nfl_backfill] Seasons: {NFL_BACKFILL_SEASONS}")
+    print(f"{'='*60}\n")
 
-            if stats and stats['total_games'] > 0:
-                wins = stats['wins'] or 0
-                losses = stats['losses'] or 0
-                total = stats['total_games']
-                avg_diff = stats['avg_point_diff'] or 0.0
+    total_inserted = 0
+    total_skipped = 0
+    team_results = []
 
-                print(f"\n{'='*60}")
-                print(f"[nfl_backfill] {COWBOYS_CONFIG['display_name']} Statistics:")
-                print(f"  Total Games: {total}")
-                print(f"  Wins: {wins}")
-                print(f"  Losses: {losses}")
-                print(f"  Win Rate: {wins / total * 100:.1f}%")
-                print(f"  Avg Point Differential: {avg_diff:.1f}")
-                print(f"{'='*60}\n")
-            else:
-                print(f"\n{'='*60}")
-                print(f"[nfl_backfill] No games found for {COWBOYS_CONFIG['display_name']}")
-                print(f"{'='*60}\n")
+    # Process each team
+    for espn_abbr, symbol in team_map.items():
+        # Build team config
+        display_name = TEAM_DISPLAY_NAMES.get(espn_abbr, f"{espn_abbr} Team")
+        team_config = {
+            "symbol": symbol,
+            "espn_abbr": espn_abbr,
+            "display_name": display_name,
+        }
+
+        # Backfill this team
+        inserted, skipped = backfill_team_outcomes(
+            team_config,
+            seasons=NFL_BACKFILL_SEASONS,
+            force=False,
+        )
+
+        total_inserted += inserted
+        total_skipped += skipped
+
+        # Validate data for this team
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COUNT(*) as total_games,
+                        SUM(CASE WHEN realized_return > 0 THEN 1 ELSE 0 END) as wins,
+                        SUM(CASE WHEN realized_return < 0 THEN 1 ELSE 0 END) as losses,
+                        AVG(price_end) as avg_point_diff
+                    FROM asset_returns
+                    WHERE symbol = %s
+                    """,
+                    (symbol,),
+                )
+                stats = cur.fetchone()
+
+                if stats and stats['total_games'] > 0:
+                    wins = stats['wins'] or 0
+                    losses = stats['losses'] or 0
+                    total = stats['total_games']
+                    avg_diff = stats['avg_point_diff'] or 0.0
+
+                    team_results.append({
+                        "team": display_name,
+                        "total": total,
+                        "wins": wins,
+                        "losses": losses,
+                        "win_rate": wins / total * 100 if total > 0 else 0,
+                        "avg_diff": avg_diff,
+                    })
+
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"[nfl_backfill] BACKFILL COMPLETE")
+    print(f"{'='*60}")
+    print(f"Total games inserted: {total_inserted}")
+    print(f"Total games skipped:  {total_skipped}")
+    print(f"\n{'='*60}")
+    print(f"[nfl_backfill] TEAM STATISTICS")
+    print(f"{'='*60}\n")
+
+    for result in team_results:
+        print(f"{result['team']}:")
+        print(f"  Total Games: {result['total']}")
+        print(f"  Wins: {result['wins']}")
+        print(f"  Losses: {result['losses']}")
+        print(f"  Win Rate: {result['win_rate']:.1f}%")
+        print(f"  Avg Point Differential: {result['avg_diff']:.1f}")
+        print()
+
+    print(f"{'='*60}\n")
 
 
 if __name__ == "__main__":

@@ -9,9 +9,11 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple
 import requests
 
-ESPN_BASE_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
-TIMEOUT_SECONDS = 10
-MAX_RETRIES = 3
+from config import ESPN_API_BASE_URL, ESPN_API_TIMEOUT, ESPN_API_MAX_RETRIES
+
+ESPN_BASE_URL = ESPN_API_BASE_URL
+TIMEOUT_SECONDS = ESPN_API_TIMEOUT
+MAX_RETRIES = ESPN_API_MAX_RETRIES
 
 
 class ESPNAPIError(Exception):
@@ -154,6 +156,54 @@ def parse_game_outcome(
         return None
 
 
+def _fetch_team_games_optimized(
+    team_abbr: str,
+    start_season: int,
+    end_season: int,
+) -> List[Tuple[datetime, str, str, int, int, bool, bool]]:
+    """
+    Optimized version using team schedule endpoint.
+    Makes 1 API call per season instead of ~26 per season.
+
+    Args:
+        team_abbr: Team abbreviation (e.g., 'DAL')
+        start_season: First season to fetch
+        end_season: Last season to fetch
+
+    Returns:
+        List of parsed game outcomes
+    """
+    all_games = []
+
+    for season in range(start_season, end_season + 1):
+        print(f"[espn_api] Fetching {team_abbr} schedule for season {season} (optimized)...")
+
+        try:
+            # Use existing get_team_schedule function (1 API call per season!)
+            schedule_data = get_team_schedule(team_abbr, season)
+
+            # Parse events from schedule
+            events = schedule_data.get("events", [])
+
+            season_games = 0
+            for event in events:
+                outcome = parse_game_outcome(event, team_abbr)
+                if outcome:
+                    all_games.append(outcome)
+                    season_games += 1
+
+            print(f"[espn_api] Found {season_games} completed games in {season}")
+
+            # Rate limiting between seasons
+            time.sleep(1)
+
+        except ESPNAPIError as e:
+            print(f"[espn_api] Failed to fetch season {season}: {e}")
+            continue
+
+    return all_games
+
+
 def fetch_team_games(
     team_abbr: str,
     start_season: int,
@@ -161,6 +211,9 @@ def fetch_team_games(
 ) -> List[Tuple[datetime, str, str, int, int, bool, bool]]:
     """
     Fetch historical games for a team across multiple seasons.
+
+    Uses optimized schedule endpoint by default (1 API call per season).
+    Falls back to week-by-week approach if schedule endpoint fails.
 
     Args:
         team_abbr: Team abbreviation (e.g., 'DAL')
@@ -170,10 +223,20 @@ def fetch_team_games(
     Returns:
         List of parsed game outcomes
     """
+    from config import ESPN_USE_OPTIMIZED_FETCH
+
+    # Try optimized approach first if enabled
+    if ESPN_USE_OPTIMIZED_FETCH:
+        try:
+            return _fetch_team_games_optimized(team_abbr, start_season, end_season)
+        except Exception as e:
+            print(f"[espn_api] Optimized fetch failed ({e}), falling back to week-by-week...")
+
+    # Fallback to week-by-week approach
     all_games = []
 
     for season in range(start_season, end_season + 1):
-        print(f"[espn_api] Fetching {team_abbr} games for season {season}...")
+        print(f"[espn_api] Fetching {team_abbr} games for season {season} (week-by-week)...")
 
         try:
             # Use week-by-week scoreboard approach (more reliable)

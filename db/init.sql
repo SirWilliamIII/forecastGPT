@@ -65,23 +65,26 @@ CREATE TABLE feed_metadata (
 );
 
 -- Projections: external model projections (e.g., NFL win probabilities)
+-- Primary key supports multiple models and horizons for the same symbol/time
 CREATE TABLE projections (
     symbol TEXT NOT NULL,                 -- 'NFL:DAL_COWBOYS', 'NFL:KC_CHIEFS', etc.
-    game_id INT,                          -- External game identifier (nullable for non-game projections)
     as_of TIMESTAMPTZ NOT NULL,          -- When this projection was made
     horizon_minutes INT NOT NULL,         -- Forecast horizon in minutes
     metric TEXT NOT NULL,                 -- 'win_prob', 'spread', 'total', etc.
     projected_value DOUBLE PRECISION NOT NULL,  -- The projected value
     model_source TEXT NOT NULL,           -- 'baker_v2', 'fivethirtyeight', etc.
+    game_id INT,                          -- External game identifier (nullable for non-game projections)
+    run_id TEXT,                          -- Ingestion run identifier (for tracking)
     opponent TEXT,                        -- Opponent identifier (nullable)
     opponent_name TEXT,                   -- Human-readable opponent name
     meta JSONB,                           -- Additional metadata (home/away, spread, etc.)
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT projections_pkey PRIMARY KEY (symbol, game_id, as_of, metric)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT projections_pkey PRIMARY KEY (symbol, as_of, horizon_minutes, metric, model_source)
 );
 
 -- Indexes for efficient queries
-CREATE INDEX idx_projections_symbol_metric ON projections (symbol, metric, as_of DESC);
+CREATE INDEX idx_projections_symbol_metric_asof ON projections (symbol, metric, as_of DESC);
 CREATE INDEX idx_projections_game ON projections (game_id, as_of DESC) WHERE game_id IS NOT NULL;
 
 -- Helpful indexes
