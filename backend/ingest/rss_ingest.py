@@ -73,14 +73,6 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
         "url": "https://www.technologyreview.com/feed/",
         "domain": DOMAIN_TECH,
     },
-    "verge_tech": {
-        "url": "https://www.theverge.com/rss/index.xml",
-        "domain": DOMAIN_TECH,
-    },
-    "tech_world": {
-        "url": "https://www.techworld.com/news/rss",
-        "domain": DOMAIN_TECH,
-    },
     "ars_technica": {
         "url": "https://feeds.arstechnica.com/arstechnica/index",
         "domain": DOMAIN_TECH,
