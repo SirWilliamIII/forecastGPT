@@ -127,9 +127,36 @@ MIN_LOOKBACK_DAYS = int(os.getenv("MIN_LOOKBACK_DAYS", "1"))
 MAX_LOOKBACK_DAYS = int(os.getenv("MAX_LOOKBACK_DAYS", "730"))  # 2 years
 
 # ═══════════════════════════════════════════════════════════════════════
+# NFL Event Forecasting Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+# NFL Backfill Configuration
+NFL_BACKFILL_SEASONS = int(os.getenv("NFL_BACKFILL_SEASONS", "3"))
+NFL_DEFAULT_HORIZON_MINUTES = int(os.getenv("NFL_DEFAULT_HORIZON_MINUTES", str(24 * 60)))  # 1 day
+
+# NFL Game Outcome Configuration
+NFL_BASELINE_SCORE = float(os.getenv("NFL_BASELINE_SCORE", "100.0"))
+NFL_POINT_DIFF_SCALE = float(os.getenv("NFL_POINT_DIFF_SCALE", "10.0"))
+
+# NFL Event-to-Game Mapping
+NFL_MAX_DAYS_AHEAD = int(os.getenv("NFL_MAX_DAYS_AHEAD", "30"))
+NFL_MAX_DAYS_BEFORE_GAME = int(os.getenv("NFL_MAX_DAYS_BEFORE_GAME", "7"))
+NFL_MIN_DAYS_BEFORE_GAME = int(os.getenv("NFL_MIN_DAYS_BEFORE_GAME", "0"))
+
+# NFL Forecasting Thresholds
+NFL_CONFIDENCE_SAMPLE_THRESHOLD = float(os.getenv("NFL_CONFIDENCE_SAMPLE_THRESHOLD", "20.0"))
+NFL_CONFIDENCE_SNR_THRESHOLD = float(os.getenv("NFL_CONFIDENCE_SNR_THRESHOLD", "2.0"))
+
+# ESPN API Configuration
+ESPN_API_BASE_URL = os.getenv("ESPN_API_BASE_URL", "https://site.api.espn.com/apis/site/v2/sports/football/nfl")
+ESPN_API_TIMEOUT = int(os.getenv("ESPN_API_TIMEOUT", "10"))
+ESPN_API_MAX_RETRIES = int(os.getenv("ESPN_API_MAX_RETRIES", "3"))
+ESPN_USE_OPTIMIZED_FETCH = os.getenv("ESPN_USE_OPTIMIZED_FETCH", "true").lower() in ("true", "1", "yes")
+
+# ═══════════════════════════════════════════════════════════════════════
 # Feature flags
 # ═══════════════════════════════════════════════════════════════════════
 
-DISABLE_STARTUP_INGESTION = os.getenv("DISABLE_STARTUP_INGESTION", "false").lower() in ("true", "1", "yes")
-DISABLE_NFL_ELO_INGEST = os.getenv("DISABLE_NFL_ELO_INGEST", "false").lower() in ("true", "1", "yes")
+DISABLE_STARTUP_INGESTION = os.getenv("DISABLE_STARTUP_INGESTION", "true").lower() in ("true", "1", "yes")
+DISABLE_NFL_ELO_INGEST = os.getenv("DISABLE_NFL_ELO_INGEST", "true").lower() in ("true", "1", "yes")
 DISABLE_BAKER_PROJECTIONS = os.getenv("DISABLE_BAKER_PROJECTIONS", "false").lower() in ("true", "1", "yes")

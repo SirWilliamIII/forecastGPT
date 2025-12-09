@@ -41,11 +41,13 @@ export type EventDomain = "crypto" | "sports" | "tech" | "general";
 export async function getRecentEvents(
   limit = 50,
   source?: string,
-  domain?: EventDomain
+  domain?: EventDomain,
+  symbol?: string
 ): Promise<EventSummary[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (source) params.set("source", source);
   if (domain) params.set("domain", domain);
+  if (symbol) params.set("symbol", symbol);
   return fetchJson<EventSummary[]>(`${API_BASE}/events/recent?${params}`);
 }
 

@@ -4,6 +4,7 @@ import sys
 import time
 import feedparser
 import requests
+import requests_cache
 from requests.exceptions import RequestException
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -34,6 +35,10 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
         "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
         "domain": DOMAIN_CRYPTO,
     },
+    "coindoo": {
+        "url": "https://coindoo.com/feed/",
+        "domain": DOMAIN_CRYPTO,
+    },
     "cointelegraph": {
         "url": "https://cointelegraph.com/rss",
         "domain": DOMAIN_CRYPTO,
@@ -50,10 +55,18 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
         "url": "https://blockworks.co/feed",
         "domain": DOMAIN_CRYPTO,
     },
+    "bitcoin_magazine": {
+        "url": "https://bitcoinmagazine.com/feed",
+        "domain": DOMAIN_CRYPTO,
+    },
 
     # Tech/AI feeds - Market-moving tech (IPOs, product launches, AI breakthroughs)
     "techcrunch": {
         "url": "https://techcrunch.com/feed/",
+        "domain": DOMAIN_TECH,
+    },
+    "new_york_times_tech": {
+        "url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
         "domain": DOMAIN_TECH,
     },
     "mit_tech_review": {
@@ -64,29 +77,49 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
         "url": "https://www.theverge.com/rss/index.xml",
         "domain": DOMAIN_TECH,
     },
+    "tech_world": {
+        "url": "https://www.techworld.com/news/rss",
+        "domain": DOMAIN_TECH,
+    },
     "ars_technica": {
         "url": "https://feeds.arstechnica.com/arstechnica/index",
         "domain": DOMAIN_TECH,
     },
+    "wired": {
+        "url": "https://www.wired.com/feed",
+        "domain": DOMAIN_TECH,
+    },
 
     # Sports feeds - Sports betting markets
+    "sports_insight": {
+        "url": "https://www.sportsinsights.com/feed/",
+        "domain": DOMAIN_SPORTS,
+    },
+    "roto_wire": {
+        "url": "https://www.rotowire.com/rss/news.php?sport=NFL",
+        "domain": DOMAIN_SPORTS,
+    },
     "the_athletic": {
         "url": "https://theathletic.com/feeds/rss/news/",
         "domain": DOMAIN_SPORTS,
     },
-    "sports_illustrated": {
-        "url": "https://www.si.com/rss/si_topstories.rss",
+    "new_york_times_sports": {
+        "url": "http://feeds1.nytimes.com/nyt/rss/Sports",
         "domain": DOMAIN_SPORTS,
     },
     "yahoo_sports": {
         "url": "https://sports.yahoo.com/rss/",
         "domain": DOMAIN_SPORTS,
     },
+    "talk_sport": {
+        "url": "https://talksport.com/sports-news/all/feed/",
+        "domain": DOMAIN_SPORTS,
+    },
 }
 
-# Disabled feeds (403 Forbidden / 404 Not Found / blocks bots):
+# Disabled/Removed feeds (403 Forbidden / 404 Not Found / blocks bots):
 # - bitcoin_magazine: 403 Forbidden
-# - espn_nfl: 403 Forbidden
+# - espn (https://www.espn.com/espn/rss/nfl/news): 403 Forbidden - REMOVED
 # - nfl_news: Doesn't parse correctly
 # - bleacher_report: 404 Not Found
 #
@@ -96,6 +129,28 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
 
 MAX_FETCH_RETRIES = int(os.getenv("MAX_FETCH_RETRIES", "3"))
 FETCH_TIMEOUT = int(os.getenv("FETCH_TIMEOUT", "10"))
+
+# HTTP caching for RSS feeds (1-hour expiry, reduces redundant fetches)
+_cached_session = None
+
+
+def get_cached_session():
+    """Get or create cached session for RSS fetching."""
+    global _cached_session
+    if _cached_session is None:
+        # Create cache in backend directory
+        cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, "rss_cache")
+
+        _cached_session = requests_cache.CachedSession(
+            cache_file,
+            backend="sqlite",
+            expire_after=3600,  # 1 hour
+            allowable_codes=(200,),
+            stale_if_error=True,  # Use stale cache if fetch fails
+        )
+    return _cached_session
 
 
 def get_feeds_by_domain(domain: Optional[str] = None) -> Dict[str, str]:
@@ -115,13 +170,19 @@ def get_source_domain(source: str) -> str:
 
 
 def fetch_feed(url: str, max_attempts: int = MAX_FETCH_RETRIES):
-    """Fetch RSS feed with retry logic and exponential backoff."""
+    """Fetch RSS feed with HTTP caching, retry logic and exponential backoff."""
     last_error: Exception | None = None
+    session = get_cached_session()
 
     for attempt in range(max_attempts):
         try:
-            resp = requests.get(url, timeout=FETCH_TIMEOUT)
+            resp = session.get(url, timeout=FETCH_TIMEOUT)
             resp.raise_for_status()
+
+            # Check if from cache
+            if hasattr(resp, 'from_cache') and resp.from_cache:
+                print(f"[ingest] ✓ Using cached feed (saved network call)")
+
             return feedparser.parse(resp.text)
         except RequestException as e:
             last_error = e

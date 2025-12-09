@@ -135,9 +135,9 @@ def build_return_samples_for_event(
             )
             neighbors = cur.fetchall()
 
-            # Apply symbol-specific filtering for crypto symbols
-            # This ensures BTC forecasts use BTC events, ETH uses ETH, etc.
-            from signals.crypto_features import is_symbol_mentioned
+            # Apply symbol-specific filtering for all asset types
+            # This ensures BTC forecasts use BTC events, Cowboys use Cowboys events, etc.
+            from signals.symbol_filter import is_symbol_mentioned
 
             filtered_neighbors = []
             for n in neighbors:

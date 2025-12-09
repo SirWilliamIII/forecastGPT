@@ -47,18 +47,29 @@ def _local_stub_embedding(text: str) -> List[float]:
 
 def embed_text(text: str) -> List[float]:
     """
-    Hybrid embedding with retry logic:
-    - Try OpenAI embeddings first (with retries + exponential backoff)
+    Hybrid embedding with caching and retry logic:
+    - Check cache first (saves API costs and latency)
+    - Try OpenAI embeddings (with retries + exponential backoff)
     - On persistent failure, fall back to local stub
     """
     text = " ".join(text.split()).strip()
     if not text:
         raise ValueError("Cannot embed empty text")
 
+    # Check cache first
+    from utils.embedding_cache import get_cache
+    cache = get_cache()
+    cached = cache.get(text)
+    if cached is not None:
+        print("[embeddings] ✓ Using cached embedding (saved API call)")
+        return cached
+
     client = _get_client()
     if client is None:
         print("[embeddings] No OPENAI_API_KEY found — using local stub.")
-        return _local_stub_embedding(text)
+        stub = _local_stub_embedding(text)
+        cache.set(text, stub)  # Cache stub embeddings too
+        return stub
 
     last_error: Exception | None = None
 
@@ -68,8 +79,13 @@ def embed_text(text: str) -> List[float]:
                 model=OPENAI_MODEL,
                 input=text,
             )
+            embedding = resp.data[0].embedding
             print("[embeddings] OpenAI embed OK → using real embedding.")
-            return resp.data[0].embedding
+
+            # Cache the result
+            cache.set(text, embedding)
+
+            return embedding
 
         except RateLimitError as e:
             last_error = e
@@ -98,4 +114,6 @@ def embed_text(text: str) -> List[float]:
             break
 
     print(f"[embeddings] Falling back to local stub after failed attempts. Last error: {last_error}")
-    return _local_stub_embedding(text)
+    stub = _local_stub_embedding(text)
+    cache.set(text, stub)  # Cache stub embeddings too
+    return stub

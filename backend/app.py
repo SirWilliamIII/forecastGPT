@@ -1,6 +1,7 @@
 # backend/app.py
 
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
@@ -63,12 +64,12 @@ scheduler = BackgroundScheduler()
 
 
 def run_rss_ingest() -> None:
-    """Background job to ingest RSS feeds."""
+    """Background job to ingest RSS feeds with skip_recent optimization."""
     try:
         from ingest.rss_ingest import main as ingest_main
 
-        print("[scheduler] Running RSS ingestion...")
-        ingest_main()
+        print("[scheduler] Running RSS ingestion (skip_recent=True)...")
+        ingest_main(skip_recent=True)
         print("[scheduler] RSS ingestion complete.")
     except Exception as e:
         print(f"[scheduler] RSS ingestion error: {e}")
@@ -125,23 +126,24 @@ def run_baker_projections() -> None:
         print(f"[scheduler] Baker projections error: {e}")
 
 
+def run_all_ingestion_jobs() -> None:
+    """Run all ingestion jobs sequentially in background thread."""
+    try:
+        print("[scheduler] Starting background ingestion...")
+        run_rss_ingest()
+        run_crypto_backfill()
+        run_equity_backfill()
+        run_nfl_elo_backfill()
+        run_baker_projections()
+        print("[scheduler] ✓ All background ingestion jobs complete")
+    except Exception as e:
+        print(f"[scheduler] Error in background ingestion: {e}")
+
+
 @app.on_event("startup")
 def startup_event() -> None:
-    """Run ingestion on startup and schedule periodic jobs."""
-    if DISABLE_STARTUP_INGESTION:
-        print("[scheduler] ⚠️  Startup ingestion DISABLED (DISABLE_STARTUP_INGESTION=true)")
-        print("[scheduler] Set DISABLE_STARTUP_INGESTION=false to enable automatic ingestion")
-        return
-
-    # Run immediately on startup (with skip_recent=True for faster subsequent runs)
-    print("[scheduler] Running initial ingestion...")
-    run_rss_ingest()
-    run_crypto_backfill()
-    run_equity_backfill()
-    run_nfl_elo_backfill()
-    run_baker_projections()
-
-    # Schedule jobs with configurable intervals
+    """Start scheduler and optionally run initial ingestion in background."""
+    # Start scheduler immediately (server becomes available quickly)
     scheduler.add_job(run_rss_ingest, "interval", hours=RSS_INGEST_INTERVAL_HOURS, id="rss_ingest")
     scheduler.add_job(run_crypto_backfill, "interval", hours=CRYPTO_BACKFILL_INTERVAL_HOURS, id="crypto_backfill")
     scheduler.add_job(run_equity_backfill, "interval", hours=EQUITY_BACKFILL_INTERVAL_HOURS, id="equity_backfill")
@@ -152,12 +154,25 @@ def startup_event() -> None:
     else:
         print("[scheduler] NFL Elo backfill job not scheduled (DISABLE_NFL_ELO_INGEST=true)")
 
-    scheduler.add_job(run_baker_projections, "interval", hours=BAKER_PROJECTIONS_INTERVAL_HOURS, id="baker_projections")
+    if not DISABLE_BAKER_PROJECTIONS:
+        scheduler.add_job(run_baker_projections, "interval", hours=BAKER_PROJECTIONS_INTERVAL_HOURS, id="baker_projections")
+    else:
+        print("[scheduler] Baker projections job not scheduled (DISABLE_BAKER_PROJECTIONS=true)")
+
     scheduler.start()
     print(
-        "[scheduler] ✓ Started background ingestion scheduler "
+        "[scheduler] ✓ Started background scheduler "
         "(RSS/Baker: hourly, crypto/equity/NFL Elo: daily)"
     )
+
+    # Run initial ingestion in background thread (non-blocking)
+    if not DISABLE_STARTUP_INGESTION:
+        print("[scheduler] Launching initial ingestion in background (non-blocking)...")
+        thread = threading.Thread(target=run_all_ingestion_jobs, daemon=True, name="InitialIngestion")
+        thread.start()
+    else:
+        print("[scheduler] ⚠️  Startup ingestion DISABLED (DISABLE_STARTUP_INGESTION=true)")
+        print("[scheduler] Set DISABLE_STARTUP_INGESTION=false to enable automatic ingestion")
 
 
 @app.on_event("shutdown")
@@ -370,7 +385,7 @@ def ingest_health() -> Dict[str, Any]:
     - feed_metadata last_fetched
     - events count
     - asset_returns latest as_of
-    - asset_projections latest as_of
+    - projections latest as_of
     - ingest_status per job
     """
     with get_conn() as conn:
@@ -381,7 +396,7 @@ def ingest_health() -> Dict[str, Any]:
             ev = cur.fetchone() or {}
             cur.execute("SELECT max(as_of) AS max_as_of FROM asset_returns")
             ar = cur.fetchone() or {}
-            cur.execute("SELECT max(as_of) AS max_as_of FROM asset_projections")
+            cur.execute("SELECT max(as_of) AS max_as_of FROM projections")
             ap = cur.fetchone() or {}
             cur.execute(
                 """
@@ -484,10 +499,12 @@ def get_recent_events(
     limit: int = Query(default=50, ge=1, le=API_MAX_EVENTS_LIMIT),
     source: Optional[str] = Query(default=None),
     domain: Optional[str] = Query(default=None, description="Filter by domain: crypto, sports, tech, general"),
+    symbol: Optional[str] = Query(default=None, description="Filter by symbol: BTC-USD, NFL:DAL_COWBOYS, etc."),
 ) -> List[EventSummary]:
     """
-    Fetch recent events, optionally filtered by source or domain.
+    Fetch recent events, optionally filtered by source, domain, or symbol.
     Domain is stored in the categories array.
+    Symbol filtering uses text matching (e.g., "Cowboys" for NFL:DAL_COWBOYS).
     Returns newest first.
     """
     with get_conn() as conn:
@@ -495,7 +512,7 @@ def get_recent_events(
             if source is not None:
                 cur.execute(
                     """
-                    SELECT id, timestamp, source, url, title, summary, categories, tags
+                    SELECT id, timestamp, source, url, title, summary, categories, tags, clean_text
                     FROM events
                     WHERE source = %s
                     ORDER BY timestamp DESC
@@ -506,7 +523,7 @@ def get_recent_events(
             elif domain is not None:
                 cur.execute(
                     """
-                    SELECT id, timestamp, source, url, title, summary, categories, tags
+                    SELECT id, timestamp, source, url, title, summary, categories, tags, clean_text
                     FROM events
                     WHERE %s = ANY(categories)
                     ORDER BY timestamp DESC
@@ -517,7 +534,7 @@ def get_recent_events(
             else:
                 cur.execute(
                     """
-                    SELECT id, timestamp, source, url, title, summary, categories, tags
+                    SELECT id, timestamp, source, url, title, summary, categories, tags, clean_text
                     FROM events
                     ORDER BY timestamp DESC
                     LIMIT %s
@@ -525,6 +542,25 @@ def get_recent_events(
                     (int(limit),),
                 )
             rows = cur.fetchall()
+
+    # Apply symbol filtering if requested (post-query filtering)
+    if symbol is not None:
+        from signals.symbol_filter import is_symbol_mentioned
+
+        filtered_rows = []
+        for r in rows:
+            # Build text to check
+            text_to_check = " ".join(filter(None, [
+                r.get('title', ''),
+                r.get('summary', ''),
+                r.get('clean_text', ''),
+            ]))
+
+            # Check if this event mentions the symbol
+            if is_symbol_mentioned(text_to_check, symbol):
+                filtered_rows.append(r)
+
+        rows = filtered_rows
 
     return [
         EventSummary(

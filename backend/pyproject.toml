@@ -13,6 +13,7 @@ dependencies = [
   "openai>=2.8.1",
   "feedparser>=6.0.12",
   "requests>=2.32.5",
+  "requests-cache>=1.2.0",
   "jupyter-console>=6.6.3",
   "yfinance>=0.2.66",
   "jupyter>=1.1.1",

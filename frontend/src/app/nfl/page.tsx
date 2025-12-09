@@ -27,8 +27,8 @@ export default function NFLPage() {
     isLoading: eventsLoading,
     refetch: refetchEvents,
   } = useQuery({
-    queryKey: ["events", "sports"],
-    queryFn: () => getRecentEvents(15, undefined, "sports"),
+    queryKey: ["events", "sports", projectionSymbol],
+    queryFn: () => getRecentEvents(50, undefined, "sports", projectionSymbol),
     staleTime: 3 * 60 * 1000,
     gcTime: 20 * 60 * 1000,
   });
@@ -185,7 +185,7 @@ export default function NFLPage() {
 
           <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3">
             <p className="text-xs text-gray-400">
-              Showing sports and NFL news events
+              Showing events relevant to selected team
             </p>
           </div>
 
