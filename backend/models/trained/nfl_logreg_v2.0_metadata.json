@@ -1,0 +1,108 @@
+{
+  "model_type": "LogisticRegression",
+  "version": "v2.0",
+  "trained_at": "2025-12-11T04:20:38.571804+00:00",
+  "training_data": {
+    "symbols": [
+      "NFL:DAL_COWBOYS",
+      "NFL:NYG_GIANTS",
+      "NFL:PHI_EAGLES",
+      "NFL:WSH_COMMANDERS"
+    ],
+    "team_counts": {
+      "NFL:DAL_COWBOYS": 212,
+      "NFL:NYG_GIANTS": 214,
+      "NFL:PHI_EAGLES": 213,
+      "NFL:WSH_COMMANDERS": 211
+    },
+    "total_games": 850,
+    "date_range": [
+      "2012-01-01T00:00:00+00:00",
+      "2024-12-29T00:00:00+00:00"
+    ],
+    "wins": 413,
+    "losses": 437,
+    "win_rate": 0.4858823529411765
+  },
+  "features": {
+    "names": [
+      "win_pct",
+      "pts_for_avg",
+      "pts_against_avg",
+      "point_diff_avg",
+      "pts_for_std",
+      "pts_against_std",
+      "last3_win_pct",
+      "games_played",
+      "win_streak"
+    ],
+    "count": 9,
+    "version": "v1.0"
+  },
+  "hyperparameters": {
+    "penalty": "l2",
+    "C": 0.1,
+    "solver": "lbfgs",
+    "random_state": 42
+  },
+  "metrics": {
+    "train_accuracy": 0.6,
+    "test_accuracy": 0.5882352941176471,
+    "overfit_gap": 0.0117647058823529,
+    "test_precision": 0.5434782608695652,
+    "test_recall": 0.33783783783783783,
+    "test_f1": 0.4166666666666667,
+    "confusion_matrix": [
+      [
+        75,
+        21
+      ],
+      [
+        49,
+        25
+      ]
+    ],
+    "feature_importance": [
+      {
+        "feature": "win_pct",
+        "coefficient": -0.3261766367985095
+      },
+      {
+        "feature": "win_streak",
+        "coefficient": 0.26974947425828116
+      },
+      {
+        "feature": "point_diff_avg",
+        "coefficient": 0.2294986919732431
+      },
+      {
+        "feature": "pts_for_avg",
+        "coefficient": 0.21820476056868834
+      },
+      {
+        "feature": "pts_for_std",
+        "coefficient": -0.13873274170240724
+      },
+      {
+        "feature": "last3_win_pct",
+        "coefficient": 0.11804636393216678
+      },
+      {
+        "feature": "games_played",
+        "coefficient": 0.027883222155724054
+      },
+      {
+        "feature": "pts_against_avg",
+        "coefficient": 0.0
+      },
+      {
+        "feature": "pts_against_std",
+        "coefficient": 0.0
+      }
+    ]
+  },
+  "usage": {
+    "load_example": "with open('/Users/will/Programming/Projects/bloombergGPT/backend/models/trained/nfl_logreg_v2.0.pkl', 'rb') as f: model_data = pickle.load(f)",
+    "predict_example": "model_data['model'].predict(model_data['scaler'].transform(X))"
+  }
+}

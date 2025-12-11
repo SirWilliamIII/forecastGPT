@@ -97,12 +97,7 @@ def parse_game_outcome(
         Returns None if game is scheduled (not completed) or data is invalid
     """
     try:
-        # Check if game is completed
-        status = game.get("status", {}).get("type", {}).get("name", "")
-        if status != "STATUS_FINAL":
-            return None  # Only return completed games for backfill
-
-        # Parse timestamp
+        # Parse timestamp first
         date_str = game.get("date")
         if not date_str:
             return None
@@ -116,6 +111,12 @@ def parse_game_outcome(
             return None
 
         competition = competitions[0]
+
+        # Check if game is completed (status is inside competition, not game)
+        status = competition.get("status", {}).get("type", {}).get("name", "")
+        if status != "STATUS_FINAL":
+            return None  # Only return completed games for backfill
+
         competitors = competition.get("competitors", [])
 
         if len(competitors) != 2:
@@ -135,9 +136,20 @@ def parse_game_outcome(
         if not our_team or not opponent:
             return None
 
-        # Parse scores
-        our_score = int(our_team.get("score", 0))
-        opp_score = int(opponent.get("score", 0))
+        # Parse scores (score is a dict with 'value' key)
+        our_score_data = our_team.get("score", {})
+        opp_score_data = opponent.get("score", {})
+
+        # Handle both dict format and direct int format
+        if isinstance(our_score_data, dict):
+            our_score = int(our_score_data.get("value", 0))
+        else:
+            our_score = int(our_score_data)
+
+        if isinstance(opp_score_data, dict):
+            opp_score = int(opp_score_data.get("value", 0))
+        else:
+            opp_score = int(opp_score_data)
 
         # Determine outcome
         is_win = our_score > opp_score

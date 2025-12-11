@@ -30,17 +30,8 @@ from config import (
     NFL_BACKFILL_SEASONS,
     NFL_DEFAULT_HORIZON_MINUTES,
     NFL_BASELINE_SCORE,
+    get_nfl_team_display_names,
 )
-
-# Team display names mapping
-TEAM_DISPLAY_NAMES = {
-    "KC": "Kansas City Chiefs",
-    "DAL": "Dallas Cowboys",
-    "SF": "San Francisco 49ers",
-    "PHI": "Philadelphia Eagles",
-    "BUF": "Buffalo Bills",
-    "DET": "Detroit Lions",
-}
 
 
 def fetch_games_multi_source(
@@ -104,7 +95,7 @@ def check_existing_games(symbol: str) -> int:
 
 def backfill_team_outcomes(
     team_config: dict,
-    seasons: int = DEFAULT_SEASONS,
+    seasons: int = NFL_BACKFILL_SEASONS,
     force: bool = False,
 ) -> Tuple[int, int]:
     """
@@ -231,9 +222,10 @@ def main():
     team_results = []
 
     # Process each team
+    team_display_names = get_nfl_team_display_names()
     for espn_abbr, symbol in team_map.items():
         # Build team config
-        display_name = TEAM_DISPLAY_NAMES.get(espn_abbr, f"{espn_abbr} Team")
+        display_name = team_display_names.get(espn_abbr, f"{espn_abbr} Team")
         team_config = {
             "symbol": symbol,
             "espn_abbr": espn_abbr,

@@ -5,10 +5,14 @@ import os
 from typing import Dict
 
 DEFAULT_TEAM_MAP = {
-    "KC": "NFL:KC_CHIEFS",
+    # NFC East (priority)
     "DAL": "NFL:DAL_COWBOYS",
-    "SF": "NFL:SF_49ERS",
+    "NYG": "NFL:NYG_GIANTS",
     "PHI": "NFL:PHI_EAGLES",
+    "WAS": "NFL:WSH_COMMANDERS",  # WAS is the standard NFL abbreviation
+    # Other teams
+    "KC": "NFL:KC_CHIEFS",
+    "SF": "NFL:SF_49ERS",
     "BUF": "NFL:BUF_BILLS",
     "DET": "NFL:DET_LIONS",
 }

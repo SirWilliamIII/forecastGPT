@@ -361,8 +361,17 @@ The backend runs scheduled jobs via APScheduler (started on app startup):
 - **Equity price backfill**: Daily (configurable symbols via `EQUITY_SYMBOLS`)
 - **Baker projections**: Hourly (NFL win probabilities)
 - **NFL Elo**: Daily (disabled by default via `DISABLE_NFL_ELO_INGEST=true`)
+- **NFL game outcomes**: Daily (fetches recent 4 weeks of games during season, Sept-Feb only)
 
 Jobs are configured in `app.py` startup event handler with configurable intervals via `config.py`.
+
+**NFL Game Outcomes (NEW):**
+- Automatically fetches completed NFL games from SportsData.io API
+- Runs daily during NFL season (September-February)
+- Fetches last 4 weeks by default (catches delayed scores and corrections)
+- Skips automatically during off-season (March-August)
+- Graceful duplicate handling (unique constraint on symbol+date+horizon)
+- Configurable via `NFL_OUTCOMES_INTERVAL_HOURS` and `NFL_OUTCOMES_LOOKBACK_WEEKS`
 
 **Disabling jobs:**
 ```bash
@@ -370,6 +379,7 @@ Jobs are configured in `app.py` startup event handler with configurable interval
 DISABLE_STARTUP_INGESTION=true       # Skip all ingestion on startup
 DISABLE_NFL_ELO_INGEST=true          # Skip NFL Elo (recommended - has CSV parsing issues)
 DISABLE_BAKER_PROJECTIONS=true       # Skip Baker projections (if not needed)
+DISABLE_NFL_OUTCOMES_INGEST=true     # Skip NFL outcomes daily updates (keeps historical data)
 ```
 
 ### Performance Optimizations

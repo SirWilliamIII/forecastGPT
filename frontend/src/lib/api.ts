@@ -162,3 +162,44 @@ export async function getAvailableHorizons(): Promise<AvailableHorizon[]> {
 export async function getAvailableSources(): Promise<AvailableSource[]> {
   return fetchJson<AvailableSource[]>(`${API_BASE}/sources/available`);
 }
+
+// NFL Team Management & Statistics
+export async function getNFLTeams(): Promise<import("@/types/api").NFLTeamInfo[]> {
+  return fetchJson<import("@/types/api").NFLTeamInfo[]>(`${API_BASE}/nfl/teams`);
+}
+
+export async function getNFLTeamStats(teamSymbol: string): Promise<import("@/types/api").NFLTeamStats> {
+  return fetchJson<import("@/types/api").NFLTeamStats>(
+    `${API_BASE}/nfl/teams/${encodeURIComponent(teamSymbol)}/stats`
+  );
+}
+
+export async function getNFLTeamGames(
+  teamSymbol: string,
+  page = 1,
+  pageSize = 20,
+  season?: number,
+  outcome?: "win" | "loss" | "all"
+): Promise<import("@/types/api").NFLGamesResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  if (season) params.set("season", String(season));
+  if (outcome) params.set("outcome", outcome);
+
+  return fetchJson<import("@/types/api").NFLGamesResponse>(
+    `${API_BASE}/nfl/teams/${encodeURIComponent(teamSymbol)}/games?${params}`
+  );
+}
+
+export async function getRecentNFLGames(
+  limit = 20,
+  team?: string
+): Promise<import("@/types/api").NFLGameInfo[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (team) params.set("team", team);
+  return fetchJson<import("@/types/api").NFLGameInfo[]>(
+    `${API_BASE}/nfl/games/recent?${params}`
+  );
+}

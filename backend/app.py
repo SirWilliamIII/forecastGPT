@@ -41,11 +41,14 @@ from config import (
     DISABLE_STARTUP_INGESTION,
     DISABLE_NFL_ELO_INGEST,
     DISABLE_BAKER_PROJECTIONS,
+    DISABLE_NFL_OUTCOMES_INGEST,
     RSS_INGEST_INTERVAL_HOURS,
     CRYPTO_BACKFILL_INTERVAL_HOURS,
     EQUITY_BACKFILL_INTERVAL_HOURS,
     NFL_ELO_BACKFILL_INTERVAL_HOURS,
     BAKER_PROJECTIONS_INTERVAL_HOURS,
+    NFL_OUTCOMES_INTERVAL_HOURS,
+    NFL_OUTCOMES_LOOKBACK_WEEKS,
     API_MAX_EVENTS_LIMIT,
     API_MAX_NEIGHBORS_LIMIT,
     API_MAX_PROJECTIONS_LIMIT,
@@ -126,6 +129,38 @@ def run_baker_projections() -> None:
         print(f"[scheduler] Baker projections error: {e}")
 
 
+def run_nfl_outcomes_daily() -> None:
+    """Background job to fetch recent NFL game outcomes (daily updates)."""
+    if DISABLE_NFL_OUTCOMES_INGEST:
+        print("[scheduler] NFL outcomes ingestion disabled (DISABLE_NFL_OUTCOMES_INGEST=true)")
+        return
+
+    try:
+        from utils.nfl_schedule import get_weeks_to_fetch, should_run_nfl_updates
+        from ingest.backfill_sportsdata_nfl import backfill_from_sportsdata
+
+        # Check if we're in NFL season
+        if not should_run_nfl_updates():
+            print("[scheduler] Skipping NFL outcomes (off-season: March-August)")
+            return
+
+        # Get current season and weeks to fetch
+        season_year, start_week, end_week = get_weeks_to_fetch(lookback_weeks=NFL_OUTCOMES_LOOKBACK_WEEKS)
+
+        print(f"[scheduler] Fetching NFL outcomes for {season_year} weeks {start_week}-{end_week}...")
+
+        # Fetch recent weeks (catches delayed scores and corrections)
+        inserted, skipped = backfill_from_sportsdata(
+            seasons=[season_year],
+            teams=None,  # All configured teams
+            weeks_per_season=end_week,  # Fetch up to current week
+        )
+
+        print(f"[scheduler] NFL outcomes: {inserted} new, {skipped} duplicates")
+    except Exception as e:
+        print(f"[scheduler] NFL outcomes error: {e}")
+
+
 def run_all_ingestion_jobs() -> None:
     """Run all ingestion jobs sequentially in background thread."""
     try:
@@ -135,6 +170,7 @@ def run_all_ingestion_jobs() -> None:
         run_equity_backfill()
         run_nfl_elo_backfill()
         run_baker_projections()
+        run_nfl_outcomes_daily()
         print("[scheduler] ✓ All background ingestion jobs complete")
     except Exception as e:
         print(f"[scheduler] Error in background ingestion: {e}")
@@ -159,10 +195,16 @@ def startup_event() -> None:
     else:
         print("[scheduler] Baker projections job not scheduled (DISABLE_BAKER_PROJECTIONS=true)")
 
+    # Schedule NFL game outcomes updates (daily during season)
+    if not DISABLE_NFL_OUTCOMES_INGEST:
+        scheduler.add_job(run_nfl_outcomes_daily, "interval", hours=NFL_OUTCOMES_INTERVAL_HOURS, id="nfl_outcomes")
+    else:
+        print("[scheduler] NFL outcomes job not scheduled (DISABLE_NFL_OUTCOMES_INGEST=true)")
+
     scheduler.start()
     print(
         "[scheduler] ✓ Started background scheduler "
-        "(RSS/Baker: hourly, crypto/equity/NFL Elo: daily)"
+        "(RSS/Baker: hourly, crypto/equity/NFL: daily)"
     )
 
     # Run initial ingestion in background thread (non-blocking)
@@ -340,6 +382,83 @@ class SentimentOut(BaseModel):
     text: str
     sentiment: str
     provider: str
+
+
+class NFLMLGameForecastOut(BaseModel):
+    """ML-based game forecast response"""
+    team_symbol: str
+    game_date: datetime
+    predicted_winner: str  # "WIN" or "LOSS"
+    win_probability: float
+    confidence: float
+    features_used: int
+    model_version: str
+
+
+class NFLMLUpcomingGamesOut(BaseModel):
+    """Upcoming games forecasts for a team"""
+    team_symbol: str
+    games_found: int
+    forecasts: List[NFLMLGameForecastOut]
+    message: Optional[str] = None
+
+
+class NFLMLModelInfoOut(BaseModel):
+    """Model metadata and training info"""
+    model_version: str
+    training_date: Optional[str] = None
+    test_accuracy: Optional[float] = None
+    train_accuracy: Optional[float] = None
+    features_count: int
+    feature_names: List[str]
+    trained_on: Optional[str] = None  # e.g., "Dallas Cowboys, 15 games"
+    hyperparameters: Optional[Dict[str, Any]] = None
+
+
+class NFLTeamInfo(BaseModel):
+    """Basic NFL team information"""
+    symbol: str
+    abbreviation: str
+    display_name: str
+    total_games: int
+    first_game_date: Optional[datetime] = None
+    last_game_date: Optional[datetime] = None
+
+
+class NFLTeamStats(BaseModel):
+    """NFL team statistics"""
+    symbol: str
+    display_name: str
+    total_games: int
+    total_wins: int
+    total_losses: int
+    win_percentage: float
+    current_season_wins: int
+    current_season_losses: int
+    current_season_win_pct: float
+    avg_point_differential: float
+    current_streak: str  # e.g., "W3" or "L2"
+    recent_games: List[Dict[str, Any]]
+
+
+class NFLGameInfo(BaseModel):
+    """Single NFL game information"""
+    symbol: str
+    game_date: datetime
+    opponent: Optional[str] = None
+    result: str  # "WIN" or "LOSS"
+    point_differential: float
+    team_score: Optional[float] = None
+    opponent_score: Optional[float] = None
+
+
+class NFLGamesResponse(BaseModel):
+    """Paginated NFL games response"""
+    symbol: str
+    total_games: int
+    games: List[NFLGameInfo]
+    page: int
+    page_size: int
 
 
 # ---------------------------------------------------------------------
@@ -856,6 +975,220 @@ def forecast_team_next_game_endpoint(
 
 
 # ---------------------------------------------------------------------
+# NFL ML Forecasting (Statistical Model)
+# ---------------------------------------------------------------------
+
+
+@app.get("/forecast/nfl/ml/game", response_model=NFLMLGameForecastOut)
+def forecast_nfl_ml_game_endpoint(
+    team_symbol: str = Query(
+        ...,
+        regex="^NFL:[A-Z_]+$",
+        description="Team symbol (e.g., NFL:DAL_COWBOYS)",
+    ),
+    game_date: datetime = Query(
+        ...,
+        description="Game date (ISO 8601 format, UTC)",
+    ),
+) -> NFLMLGameForecastOut:
+    """
+    Predict a specific NFL game outcome using the trained ML model.
+
+    **Model:** Logistic Regression with 9 statistical features
+    **Accuracy:** 66.7% on test set (no overfitting)
+    **Features:** win%, points, differentials, streaks, volatility
+
+    **Example:**
+    ```
+    GET /forecast/nfl/ml/game?team_symbol=NFL:DAL_COWBOYS&game_date=2024-11-28T18:00:00Z
+    ```
+
+    **Response:**
+    ```json
+    {
+      "team_symbol": "NFL:DAL_COWBOYS",
+      "game_date": "2024-11-28T18:00:00Z",
+      "predicted_winner": "WIN",
+      "win_probability": 0.623,
+      "confidence": 0.623,
+      "features_used": 9,
+      "model_version": "v1.0"
+    }
+    ```
+
+    **Use case:** Get prediction for a specific scheduled game
+    """
+    from models.nfl_ml_forecaster import get_forecaster
+
+    # Ensure game_date is timezone-aware
+    if game_date.tzinfo is None:
+        game_date = game_date.replace(tzinfo=timezone.utc)
+
+    forecaster = get_forecaster()
+    result = forecaster.predict(symbol=team_symbol, game_date=game_date)
+
+    return NFLMLGameForecastOut(
+        team_symbol=team_symbol,
+        game_date=game_date,
+        predicted_winner=result["predicted_winner"],
+        win_probability=result["win_probability"],
+        confidence=result["confidence"],
+        features_used=result["features_used"],
+        model_version=result["model_version"],
+    )
+
+
+@app.get("/forecast/nfl/ml/team/{team_symbol}/upcoming", response_model=NFLMLUpcomingGamesOut)
+def forecast_nfl_ml_upcoming_endpoint(
+    team_symbol: str,
+    limit: int = Query(5, ge=1, le=10, description="Max number of upcoming games to forecast"),
+) -> NFLMLUpcomingGamesOut:
+    """
+    Forecast upcoming games for a team using the trained ML model.
+
+    This endpoint:
+    1. Queries asset_returns for upcoming game dates
+    2. Runs ML prediction for each game
+    3. Returns forecasts sorted by date
+
+    **Example:**
+    ```
+    GET /forecast/nfl/ml/team/NFL:DAL_COWBOYS/upcoming?limit=3
+    ```
+
+    **Response:**
+    ```json
+    {
+      "team_symbol": "NFL:DAL_COWBOYS",
+      "games_found": 3,
+      "forecasts": [
+        {
+          "team_symbol": "NFL:DAL_COWBOYS",
+          "game_date": "2024-11-28T18:00:00Z",
+          "predicted_winner": "WIN",
+          "win_probability": 0.623,
+          "confidence": 0.623,
+          "features_used": 9,
+          "model_version": "v1.0"
+        },
+        ...
+      ]
+    }
+    ```
+
+    **Use case:** Team dashboard showing predicted outcomes for all upcoming games
+    """
+    from models.nfl_ml_forecaster import get_forecaster
+
+    # Query upcoming games from asset_returns
+    now = datetime.now(tz=timezone.utc)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT DISTINCT as_of
+                FROM asset_returns
+                WHERE symbol = %s
+                  AND as_of > %s
+                ORDER BY as_of ASC
+                LIMIT %s
+                """,
+                (team_symbol, now, limit),
+            )
+            rows = cur.fetchall()
+
+    if not rows:
+        return NFLMLUpcomingGamesOut(
+            team_symbol=team_symbol,
+            games_found=0,
+            forecasts=[],
+            message="No upcoming games found in asset_returns table",
+        )
+
+    # Generate forecasts for each game
+    forecaster = get_forecaster()
+    forecasts = []
+
+    for row in rows:
+        game_date = row["as_of"]
+        result = forecaster.predict(symbol=team_symbol, game_date=game_date)
+
+        forecasts.append(
+            NFLMLGameForecastOut(
+                team_symbol=team_symbol,
+                game_date=game_date,
+                predicted_winner=result["predicted_winner"],
+                win_probability=result["win_probability"],
+                confidence=result["confidence"],
+                features_used=result["features_used"],
+                model_version=result["model_version"],
+            )
+        )
+
+    return NFLMLUpcomingGamesOut(
+        team_symbol=team_symbol,
+        games_found=len(forecasts),
+        forecasts=forecasts,
+    )
+
+
+@app.get("/forecast/nfl/ml/model/info", response_model=NFLMLModelInfoOut)
+def get_nfl_ml_model_info_endpoint() -> NFLMLModelInfoOut:
+    """
+    Get metadata about the trained NFL ML model.
+
+    Returns:
+    - Model version
+    - Training date
+    - Accuracy metrics
+    - Feature names
+    - Hyperparameters
+
+    **Example:**
+    ```
+    GET /forecast/nfl/ml/model/info
+    ```
+
+    **Response:**
+    ```json
+    {
+      "model_version": "v1.0",
+      "training_date": "2024-12-10T03:45:00Z",
+      "test_accuracy": 0.667,
+      "train_accuracy": 0.667,
+      "features_count": 9,
+      "feature_names": ["win_pct", "pts_for_avg", ...],
+      "trained_on": "Dallas Cowboys, 15 games (2024-2025)",
+      "hyperparameters": {
+        "model": "LogisticRegression",
+        "penalty": "l2",
+        "C": 0.1,
+        "solver": "lbfgs"
+      }
+    }
+    ```
+
+    **Use case:** Model transparency, debugging, versioning
+    """
+    from models.nfl_ml_forecaster import get_forecaster
+
+    forecaster = get_forecaster()
+    metadata = forecaster.get_metadata()
+
+    return NFLMLModelInfoOut(
+        model_version=forecaster.version,
+        training_date=metadata.get("training_date"),
+        test_accuracy=metadata.get("test_accuracy"),
+        train_accuracy=metadata.get("train_accuracy"),
+        features_count=len(forecaster.feature_names),
+        feature_names=forecaster.feature_names,
+        trained_on=metadata.get("trained_on"),
+        hyperparameters=metadata.get("hyperparameters"),
+    )
+
+
+# ---------------------------------------------------------------------
 # Projections (Baker, etc.)
 # ---------------------------------------------------------------------
 
@@ -1058,3 +1391,448 @@ def analyze_sentiment_endpoint(
     except Exception as e:
         print(f"[llm] Unexpected error in classify_sentiment: {e}")
         raise HTTPException(status_code=503, detail="LLM provider error")
+
+
+# ---------------------------------------------------------------------
+# NFL Team Management & Statistics
+# ---------------------------------------------------------------------
+
+
+@app.get("/nfl/teams", response_model=List[NFLTeamInfo])
+def get_nfl_teams() -> List[NFLTeamInfo]:
+    """
+    Get list of all NFL teams with basic information.
+
+    Returns metadata for each team including total games, date ranges, and display names.
+    Teams are sorted by total games (most data first).
+
+    **Example:**
+    ```
+    GET /nfl/teams
+    ```
+
+    **Response:**
+    ```json
+    [
+      {
+        "symbol": "NFL:DAL_COWBOYS",
+        "abbreviation": "DAL",
+        "display_name": "Dallas Cowboys",
+        "total_games": 215,
+        "first_game_date": "2012-09-09T17:00:00Z",
+        "last_game_date": "2024-12-08T18:00:00Z"
+      },
+      ...
+    ]
+    ```
+    """
+    from config import get_nfl_team_display_names
+
+    team_names = get_nfl_team_display_names()
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Get all NFL team symbols and their game counts
+            cur.execute(
+                """
+                SELECT
+                    symbol,
+                    COUNT(*) as total_games,
+                    MIN(as_of) as first_game,
+                    MAX(as_of) as last_game
+                FROM asset_returns
+                WHERE symbol LIKE 'NFL:%'
+                GROUP BY symbol
+                ORDER BY total_games DESC
+                """
+            )
+            rows = cur.fetchall()
+
+    teams = []
+    for row in rows:
+        symbol = row["symbol"]
+        # Extract abbreviation from symbol (e.g., "NFL:DAL_COWBOYS" -> "DAL")
+        if ":" in symbol:
+            parts = symbol.split(":", 1)[1]  # "DAL_COWBOYS"
+            abbr = parts.split("_")[0]  # "DAL"
+        else:
+            abbr = symbol
+
+        display_name = team_names.get(abbr, abbr)
+
+        teams.append(
+            NFLTeamInfo(
+                symbol=symbol,
+                abbreviation=abbr,
+                display_name=display_name,
+                total_games=row["total_games"],
+                first_game_date=row["first_game"],
+                last_game_date=row["last_game"],
+            )
+        )
+
+    return teams
+
+
+@app.get("/nfl/teams/{team_symbol}/stats", response_model=NFLTeamStats)
+def get_nfl_team_stats(team_symbol: str) -> NFLTeamStats:
+    """
+    Get detailed statistics for a specific NFL team.
+
+    Includes:
+    - Overall win/loss record
+    - Current season (2024) record
+    - Average point differential
+    - Current win/loss streak
+    - Last 10 games
+
+    **Example:**
+    ```
+    GET /nfl/teams/NFL:DAL_COWBOYS/stats
+    ```
+
+    **Response:**
+    ```json
+    {
+      "symbol": "NFL:DAL_COWBOYS",
+      "display_name": "Dallas Cowboys",
+      "total_games": 215,
+      "total_wins": 120,
+      "total_losses": 95,
+      "win_percentage": 0.558,
+      "current_season_wins": 5,
+      "current_season_losses": 8,
+      "current_season_win_pct": 0.385,
+      "avg_point_differential": 2.3,
+      "current_streak": "L5",
+      "recent_games": [...]
+    }
+    ```
+    """
+    from config import get_nfl_team_display_names
+
+    team_names = get_nfl_team_display_names()
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Get overall stats
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) as total_games,
+                    SUM(CASE WHEN realized_return > 0 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN realized_return < 0 THEN 1 ELSE 0 END) as losses,
+                    AVG(price_end - price_start) as avg_point_diff
+                FROM asset_returns
+                WHERE symbol = %s
+                """,
+                (team_symbol,),
+            )
+            overall = cur.fetchone()
+
+            if not overall or overall["total_games"] == 0:
+                raise HTTPException(status_code=404, detail=f"Team {team_symbol} not found")
+
+            # Get current season stats (2024)
+            cur.execute(
+                """
+                SELECT
+                    COUNT(*) as total_games,
+                    SUM(CASE WHEN realized_return > 0 THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN realized_return < 0 THEN 1 ELSE 0 END) as losses
+                FROM asset_returns
+                WHERE symbol = %s
+                  AND EXTRACT(YEAR FROM as_of) = 2024
+                """,
+                (team_symbol,),
+            )
+            season = cur.fetchone()
+
+            # Get last 10 games for streak calculation and display
+            cur.execute(
+                """
+                SELECT
+                    as_of,
+                    realized_return,
+                    price_end - price_start as point_diff
+                FROM asset_returns
+                WHERE symbol = %s
+                ORDER BY as_of DESC
+                LIMIT 10
+                """,
+                (team_symbol,),
+            )
+            recent = cur.fetchall()
+
+    # Calculate win percentage
+    total_games = overall["total_games"]
+    wins = overall["wins"]
+    losses = overall["losses"]
+    win_pct = wins / total_games if total_games > 0 else 0.0
+
+    # Current season stats
+    season_games = season["total_games"] if season else 0
+    season_wins = season["wins"] if season else 0
+    season_losses = season["losses"] if season else 0
+    season_win_pct = season_wins / season_games if season_games > 0 else 0.0
+
+    # Calculate current streak
+    streak = ""
+    if recent:
+        streak_count = 0
+        streak_type = "W" if recent[0]["realized_return"] > 0 else "L"
+
+        for game in recent:
+            game_type = "W" if game["realized_return"] > 0 else "L"
+            if game_type == streak_type:
+                streak_count += 1
+            else:
+                break
+
+        streak = f"{streak_type}{streak_count}"
+
+    # Format recent games
+    recent_games = []
+    for game in recent:
+        result = "WIN" if game["realized_return"] > 0 else "LOSS"
+        recent_games.append({
+            "date": game["as_of"].isoformat(),
+            "result": result,
+            "point_differential": float(game["point_diff"]),
+        })
+
+    # Extract abbreviation and display name
+    abbr = team_symbol.split(":", 1)[1].split("_")[0] if ":" in team_symbol else team_symbol
+    display_name = team_names.get(abbr, abbr)
+
+    return NFLTeamStats(
+        symbol=team_symbol,
+        display_name=display_name,
+        total_games=total_games,
+        total_wins=wins,
+        total_losses=losses,
+        win_percentage=win_pct,
+        current_season_wins=season_wins,
+        current_season_losses=season_losses,
+        current_season_win_pct=season_win_pct,
+        avg_point_differential=float(overall["avg_point_diff"]),
+        current_streak=streak,
+        recent_games=recent_games,
+    )
+
+
+@app.get("/nfl/teams/{team_symbol}/games", response_model=NFLGamesResponse)
+def get_nfl_team_games(
+    team_symbol: str,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Games per page"),
+    season: Optional[int] = Query(None, ge=2012, le=2030, description="Filter by season year"),
+    outcome: Optional[str] = Query(None, regex="^(win|loss|all)$", description="Filter by outcome: win, loss, all"),
+) -> NFLGamesResponse:
+    """
+    Get paginated game history for an NFL team.
+
+    Supports filtering by season and outcome (win/loss).
+    Games are returned newest first.
+
+    **Parameters:**
+    - `page`: Page number (default: 1)
+    - `page_size`: Games per page (default: 20, max: 100)
+    - `season`: Filter by year (optional)
+    - `outcome`: Filter by result - "win", "loss", or "all" (optional)
+
+    **Example:**
+    ```
+    GET /nfl/teams/NFL:DAL_COWBOYS/games?page=1&page_size=10&season=2024&outcome=win
+    ```
+
+    **Response:**
+    ```json
+    {
+      "symbol": "NFL:DAL_COWBOYS",
+      "total_games": 215,
+      "games": [
+        {
+          "symbol": "NFL:DAL_COWBOYS",
+          "game_date": "2024-12-08T18:00:00Z",
+          "result": "LOSS",
+          "point_differential": -13.0,
+          "team_score": 14.0,
+          "opponent_score": 27.0
+        },
+        ...
+      ],
+      "page": 1,
+      "page_size": 10
+    }
+    ```
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Build WHERE clause
+            where_clauses = ["symbol = %s"]
+            params = [team_symbol]
+
+            if season is not None:
+                where_clauses.append("EXTRACT(YEAR FROM as_of) = %s")
+                params.append(season)
+
+            if outcome and outcome != "all":
+                if outcome == "win":
+                    where_clauses.append("realized_return > 0")
+                elif outcome == "loss":
+                    where_clauses.append("realized_return < 0")
+
+            where_sql = " AND ".join(where_clauses)
+
+            # Get total count
+            count_query = f"SELECT COUNT(*) as total FROM asset_returns WHERE {where_sql}"
+            cur.execute(count_query, params)
+            total_row = cur.fetchone()
+            total_games = total_row["total"] if total_row else 0
+
+            # Get paginated games
+            offset = (page - 1) * page_size
+            games_query = f"""
+                SELECT
+                    as_of,
+                    realized_return,
+                    price_start,
+                    price_end
+                FROM asset_returns
+                WHERE {where_sql}
+                ORDER BY as_of DESC
+                LIMIT %s OFFSET %s
+            """
+            cur.execute(games_query, params + [page_size, offset])
+            rows = cur.fetchall()
+
+    games = []
+    for row in rows:
+        result = "WIN" if row["realized_return"] > 0 else "LOSS"
+        point_diff = row["price_end"] - row["price_start"]
+
+        # Calculate scores from baseline (100)
+        # price_end = 100 + point_differential (team's final score offset)
+        # For wins: team scored more, point_diff is positive
+        # For losses: team scored less, point_diff is negative
+        if result == "WIN":
+            team_score = 100 + abs(point_diff) / 2
+            opponent_score = 100 - abs(point_diff) / 2
+        else:
+            team_score = 100 - abs(point_diff) / 2
+            opponent_score = 100 + abs(point_diff) / 2
+
+        games.append(
+            NFLGameInfo(
+                symbol=team_symbol,
+                game_date=row["as_of"],
+                result=result,
+                point_differential=float(point_diff),
+                team_score=float(team_score) - 100,  # Remove baseline to show actual differential
+                opponent_score=float(opponent_score) - 100,  # Remove baseline
+            )
+        )
+
+    return NFLGamesResponse(
+        symbol=team_symbol,
+        total_games=total_games,
+        games=games,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@app.get("/nfl/games/recent", response_model=List[NFLGameInfo])
+def get_recent_nfl_games(
+    limit: int = Query(20, ge=1, le=100, description="Number of games to return"),
+    team: Optional[str] = Query(None, description="Filter by team symbol (optional)"),
+) -> List[NFLGameInfo]:
+    """
+    Get recent NFL games across all teams.
+
+    Returns the most recent games, optionally filtered by team.
+    Games are sorted newest first.
+
+    **Example:**
+    ```
+    GET /nfl/games/recent?limit=10
+    GET /nfl/games/recent?limit=5&team=NFL:DAL_COWBOYS
+    ```
+
+    **Response:**
+    ```json
+    [
+      {
+        "symbol": "NFL:DAL_COWBOYS",
+        "game_date": "2024-12-08T18:00:00Z",
+        "result": "LOSS",
+        "point_differential": -13.0,
+        "team_score": 14.0,
+        "opponent_score": 27.0
+      },
+      ...
+    ]
+    ```
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if team:
+                cur.execute(
+                    """
+                    SELECT
+                        symbol,
+                        as_of,
+                        realized_return,
+                        price_start,
+                        price_end
+                    FROM asset_returns
+                    WHERE symbol = %s
+                    ORDER BY as_of DESC
+                    LIMIT %s
+                    """,
+                    (team, limit),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT
+                        symbol,
+                        as_of,
+                        realized_return,
+                        price_start,
+                        price_end
+                    FROM asset_returns
+                    WHERE symbol LIKE 'NFL:%'
+                    ORDER BY as_of DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+            rows = cur.fetchall()
+
+    games = []
+    for row in rows:
+        result = "WIN" if row["realized_return"] > 0 else "LOSS"
+        point_diff = row["price_end"] - row["price_start"]
+
+        # Calculate scores from baseline (100)
+        if result == "WIN":
+            team_score = 100 + abs(point_diff) / 2
+            opponent_score = 100 - abs(point_diff) / 2
+        else:
+            team_score = 100 - abs(point_diff) / 2
+            opponent_score = 100 + abs(point_diff) / 2
+
+        games.append(
+            NFLGameInfo(
+                symbol=row["symbol"],
+                game_date=row["as_of"],
+                result=result,
+                point_differential=float(point_diff),
+                team_score=float(team_score) - 100,  # Remove baseline
+                opponent_score=float(opponent_score) - 100,  # Remove baseline
+            )
+        )
+
+    return games

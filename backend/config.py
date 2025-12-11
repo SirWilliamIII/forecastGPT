@@ -58,6 +58,11 @@ CRYPTO_BACKFILL_INTERVAL_HOURS = int(os.getenv("CRYPTO_BACKFILL_INTERVAL_HOURS",
 EQUITY_BACKFILL_INTERVAL_HOURS = int(os.getenv("EQUITY_BACKFILL_INTERVAL_HOURS", "24"))
 NFL_ELO_BACKFILL_INTERVAL_HOURS = int(os.getenv("NFL_ELO_BACKFILL_INTERVAL_HOURS", "24"))
 BAKER_PROJECTIONS_INTERVAL_HOURS = int(os.getenv("BAKER_PROJECTIONS_INTERVAL_HOURS", "1"))
+NFL_OUTCOMES_INTERVAL_HOURS = int(os.getenv("NFL_OUTCOMES_INTERVAL_HOURS", "24"))
+
+# NFL outcomes update configuration
+NFL_OUTCOMES_LOOKBACK_WEEKS = int(os.getenv("NFL_OUTCOMES_LOOKBACK_WEEKS", "4"))
+DISABLE_NFL_OUTCOMES_INGEST = os.getenv("DISABLE_NFL_OUTCOMES_INGEST", "false").lower() == "true"
 
 # ═══════════════════════════════════════════════════════════════════════
 # Asset Symbol Configuration
@@ -152,6 +157,53 @@ ESPN_API_BASE_URL = os.getenv("ESPN_API_BASE_URL", "https://site.api.espn.com/ap
 ESPN_API_TIMEOUT = int(os.getenv("ESPN_API_TIMEOUT", "10"))
 ESPN_API_MAX_RETRIES = int(os.getenv("ESPN_API_MAX_RETRIES", "3"))
 ESPN_USE_OPTIMIZED_FETCH = os.getenv("ESPN_USE_OPTIMIZED_FETCH", "true").lower() in ("true", "1", "yes")
+
+# SportsData.io Configuration
+SPORTSDATA_API_KEY = os.getenv("SPORTSDATA_API_KEY", "")
+SPORTSDATA_BASE_URL = os.getenv("SPORTSDATA_BASE_URL", "https://api.sportsdata.io/v3/nfl/")
+SPORTSDATA_TIMEOUT = int(os.getenv("SPORTSDATA_TIMEOUT", "15"))
+SPORTSDATA_MAX_RETRIES = int(os.getenv("SPORTSDATA_MAX_RETRIES", "3"))
+
+# Event backfill settings
+NFL_EVENT_BACKFILL_START = os.getenv("NFL_EVENT_BACKFILL_START", "2024-09-01")
+NFL_EVENT_LOOKBACK_DAYS = int(os.getenv("NFL_EVENT_LOOKBACK_DAYS", "7"))
+
+# NFL Team Display Names
+def get_nfl_team_display_names() -> Dict[str, str]:
+    """
+    Get NFL team display names from env or defaults.
+    Format (env): NFL_TEAM_KC_NAME=Kansas City Chiefs,NFL_TEAM_DAL_NAME=Dallas Cowboys,...
+    """
+    # Default mapping
+    defaults = {
+        # NFC East (priority)
+        "DAL": "Dallas Cowboys",
+        "NYG": "New York Giants",
+        "PHI": "Philadelphia Eagles",
+        "WAS": "Washington Commanders",  # Historically Washington Redskins/Football Team
+        # Other teams
+        "KC": "Kansas City Chiefs",
+        "SF": "San Francisco 49ers",
+        "BUF": "Buffalo Bills",
+        "DET": "Detroit Lions",
+    }
+
+    # Allow overrides via environment variables
+    result = {}
+    for abbr, default_name in defaults.items():
+        env_key = f"NFL_TEAM_{abbr}_NAME"
+        result[abbr] = os.getenv(env_key, default_name)
+
+    return result
+
+# ═══════════════════════════════════════════════════════════════════════
+# NFL Feature Engineering Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+NFL_FEATURES_VERSION = os.getenv("NFL_FEATURES_VERSION", "v1.0")
+NFL_LOOKBACK_GAMES = int(os.getenv("NFL_LOOKBACK_GAMES", "5"))  # Rolling window for statistics
+NFL_MIN_GAMES_FOR_FEATURES = int(os.getenv("NFL_MIN_GAMES_FOR_FEATURES", "3"))  # Minimum history needed
+NFL_FORM_WINDOW = int(os.getenv("NFL_FORM_WINDOW", "3"))  # Recent form window
 
 # ═══════════════════════════════════════════════════════════════════════
 # Feature flags

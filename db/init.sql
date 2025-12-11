@@ -27,7 +27,8 @@ CREATE TABLE events (
     clean_text TEXT,
     embed VECTOR(3072),              -- semantic fingerprint (text-embedding-3-large)
     categories TEXT[],               -- ['regulatory','hack','macro']
-    tags TEXT[]                      -- ['btc','eth','exchange','sec']
+    tags TEXT[],                     -- ['btc','eth','exchange','sec']
+    meta JSONB                       -- Additional metadata (news_id, player_id, etc.)
 );
 
 -- Price history: stocks, crypto, indices, whatever
@@ -103,6 +104,10 @@ ON events USING GIN (categories);
 
 CREATE INDEX idx_events_tags
 ON events USING GIN (tags);
+
+-- Metadata (GIN for JSONB queries)
+CREATE INDEX idx_events_meta
+ON events USING GIN (meta);
 
 -- Note: pgvector indexes (IVFFlat, HNSW) have a 2000 dimension limit.
 -- For 3072-dim vectors, we skip the index and rely on exact search.

@@ -131,3 +131,50 @@ export interface NFLTeamForecast {
   forecast_confidence: number | null;
   message: string | null;
 }
+
+// NFL Team Management & Statistics
+export interface NFLTeamInfo {
+  symbol: string;
+  abbreviation: string;
+  display_name: string;
+  total_games: number;
+  first_game_date: string | null;
+  last_game_date: string | null;
+}
+
+export interface NFLTeamStats {
+  symbol: string;
+  display_name: string;
+  total_games: number;
+  total_wins: number;
+  total_losses: number;
+  win_percentage: number;
+  current_season_wins: number;
+  current_season_losses: number;
+  current_season_win_pct: number;
+  avg_point_differential: number;
+  current_streak: string;
+  recent_games: Array<{
+    date: string;
+    result: string;
+    point_differential: number;
+  }>;
+}
+
+export interface NFLGameInfo {
+  symbol: string;
+  game_date: string;
+  opponent?: string | null;
+  result: string; // "WIN" or "LOSS"
+  point_differential: number;
+  team_score?: number | null;
+  opponent_score?: number | null;
+}
+
+export interface NFLGamesResponse {
+  symbol: string;
+  total_games: number;
+  games: NFLGameInfo[];
+  page: number;
+  page_size: number;
+}
