@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# Git pre-commit hook to prevent committing secrets and API keys
+# Install: cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+set -e
+
+# ANSI color codes
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Secret patterns to check for
+declare -a PATTERNS=(
+    # OpenAI API keys
+    "sk-proj-[a-zA-Z0-9_-]{100,}"
+    "sk-[a-zA-Z0-9]{20,}"
+
+    # Anthropic API keys
+    "sk-ant-api[0-9]{2}-[a-zA-Z0-9_-]{90,}"
+
+    # Google/Gemini API keys
+    "AIzaSy[a-zA-Z0-9_-]{33}"
+
+    # Generic API key patterns
+    "[a-zA-Z0-9_-]{32,}"
+
+    # AWS keys
+    "AKIA[0-9A-Z]{16}"
+    "aws_secret_access_key.*['\"][a-zA-Z0-9/+=]{40}['\"]"
+
+    # Private keys
+    "-----BEGIN (RSA |DSA |EC )?PRIVATE KEY-----"
+
+    # Generic secrets
+    "password.*['\"][^'\"]{8,}['\"]"
+    "secret.*['\"][^'\"]{8,}['\"]"
+    "token.*['\"][^'\"]{8,}['\"]"
+)
+
+# Files to exclude from checks
+EXCLUDE_PATTERNS=".env.example|.gitignore|scripts/pre-commit|README.md"
+
+# Get list of files to be committed
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -z "$FILES" ]; then
+    # No files to check
+    exit 0
+fi
+
+# Flag for finding secrets
+SECRETS_FOUND=0
+
+echo "🔍 Checking for secrets in staged files..."
+
+for FILE in $FILES; do
+    # Skip excluded files
+    if echo "$FILE" | grep -qE "$EXCLUDE_PATTERNS"; then
+        continue
+    fi
+
+    # Skip if file doesn't exist (deleted files)
+    if [ ! -f "$FILE" ]; then
+        continue
+    fi
+
+    # Check each pattern
+    for PATTERN in "${PATTERNS[@]}"; do
+        if grep -qE "$PATTERN" "$FILE"; then
+            echo -e "${RED}✗ Potential secret found in $FILE${NC}"
+            echo -e "${YELLOW}  Pattern: $PATTERN${NC}"
+            grep --color=always -nE "$PATTERN" "$FILE" || true
+            SECRETS_FOUND=1
+        fi
+    done
+
+    # Additional check: Look for common secret variable names with values
+    if grep -qE "(OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|WEAVIATE_API_KEY|BAKER_API_KEY|SPORTSDATA_API_KEY)=.{10,}" "$FILE"; then
+        # Exclude .env.example (which should have placeholder values)
+        if ! echo "$FILE" | grep -qE "\.env\.example"; then
+            echo -e "${RED}✗ API key assignment found in $FILE${NC}"
+            grep --color=always -nE "(OPENAI_API_KEY|ANTHROPIC_API_KEY|GEMINI_API_KEY|GOOGLE_API_KEY|WEAVIATE_API_KEY|BAKER_API_KEY|SPORTSDATA_API_KEY)=.{10,}" "$FILE" || true
+            SECRETS_FOUND=1
+        fi
+    fi
+done
+
+if [ $SECRETS_FOUND -eq 1 ]; then
+    echo ""
+    echo -e "${RED}╔════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  COMMIT BLOCKED: Potential secrets detected                ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}What to do:${NC}"
+    echo "1. Remove the secrets from the files"
+    echo "2. Use environment variables instead (check .env.example)"
+    echo "3. If this is a false positive, you can:"
+    echo "   - Update this hook to exclude the pattern"
+    echo "   - Use: git commit --no-verify (NOT RECOMMENDED)"
+    echo ""
+    echo -e "${YELLOW}Security reminder:${NC}"
+    echo "- Never commit .env files (should be in .gitignore)"
+    echo "- Use .env.example for templates with placeholder values"
+    echo "- If you already committed secrets, rotate them immediately:"
+    echo "  - OpenAI: https://platform.openai.com/api-keys"
+    echo "  - Anthropic: https://console.anthropic.com/settings/keys"
+    echo "  - Gemini: https://console.cloud.google.com/apis/credentials"
+    echo ""
+    exit 1
+fi
+
+echo -e "✓ No secrets detected in staged files"
+exit 0

@@ -1,0 +1,97 @@
+{
+  "model_type": "LogisticRegression",
+  "version": "v1.0",
+  "trained_at": "2025-12-11T03:05:55.684929+00:00",
+  "training_data": {
+    "symbol": "NFL:DAL_COWBOYS",
+    "total_games": 15,
+    "date_range": [
+      "2024-09-08T20:25:00+00:00",
+      "2025-11-18T01:15:00+00:00"
+    ],
+    "wins": 6,
+    "losses": 9,
+    "win_rate": 0.4
+  },
+  "features": {
+    "names": [
+      "win_pct",
+      "pts_for_avg",
+      "pts_against_avg",
+      "point_diff_avg",
+      "last3_win_pct",
+      "games_played",
+      "pts_for_std",
+      "pts_against_std",
+      "win_streak"
+    ],
+    "count": 9,
+    "version": "v1.0"
+  },
+  "hyperparameters": {
+    "penalty": "l2",
+    "C": 0.1,
+    "solver": "lbfgs",
+    "random_state": 42
+  },
+  "metrics": {
+    "train_accuracy": 0.6666666666666666,
+    "test_accuracy": 0.6666666666666666,
+    "overfit_gap": 0.0,
+    "test_precision": 0.0,
+    "test_recall": 0.0,
+    "test_f1": 0.0,
+    "confusion_matrix": [
+      [
+        2,
+        0
+      ],
+      [
+        1,
+        0
+      ]
+    ],
+    "feature_importance": [
+      {
+        "feature": "win_pct",
+        "coefficient": -0.13392062215258188
+      },
+      {
+        "feature": "pts_for_std",
+        "coefficient": -0.11883566202686408
+      },
+      {
+        "feature": "pts_for_avg",
+        "coefficient": -0.0984207926105354
+      },
+      {
+        "feature": "last3_win_pct",
+        "coefficient": -0.0657693829793082
+      },
+      {
+        "feature": "point_diff_avg",
+        "coefficient": -0.047127403801667286
+      },
+      {
+        "feature": "games_played",
+        "coefficient": 0.03521884864912192
+      },
+      {
+        "feature": "win_streak",
+        "coefficient": -0.00588241606611556
+      },
+      {
+        "feature": "pts_against_avg",
+        "coefficient": 0.0
+      },
+      {
+        "feature": "pts_against_std",
+        "coefficient": 0.0
+      }
+    ]
+  },
+  "usage": {
+    "load_example": "with open('/Users/will/Programming/Projects/bloombergGPT/backend/models/trained/nfl_logreg_v1.0.pkl', 'rb') as f: model_data = pickle.load(f)",
+    "predict_example": "model_data['model'].predict(model_data['scaler'].transform(X))"
+  }
+}
