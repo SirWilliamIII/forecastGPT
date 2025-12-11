@@ -459,18 +459,46 @@ Conceptually, this is now a **semantic-to-metric forecasting OS** where BTC is j
 
 ## **10. Recent Progress / Gaps / Next Steps**
 
-- **Progress**
-  - Added a dedicated `asset_projections` store and ingestion for Baker NFL win probabilities (KC/DAL configurable via `BAKER_TEAM_MAP`), including opponent, spread, and O/U metadata plus idempotent writes.
-  - UI now surfaces NFL projections with opponent context, spread/total, home/away badge, delta vs prior, recency stamp, and a small trend sparkline.
-  - Ingestion observability: `/ingest/health` endpoint + `ingest_status` table tracks last success/error/row counts; projections index on `(symbol, metric, as_of DESC)` added.
-  - Header-based auth for Baker (no key in URLs); scheduler wired for hourly projections; Elo job can be disabled via `DISABLE_NFL_ELO_INGEST`.
+- **Progress (December 10, 2025)**
+  - **NFL Analytics System Complete** ✅
+    - Comprehensive ML forecasting with daily automated updates
+    - Data: 1,699 games across 8 teams (2012-2024)
+    - ML Model v2.0: Logistic regression, 58.8% test accuracy on 850 games
+    - 9 features: win_pct, point_diff, streaks, home/away, rest days, etc.
+    - Daily scheduler with season awareness (Sept-Feb only, 4-week lookback)
+    - Cost-efficient: ~18,000 API calls/year (within free tier)
+  - **API Endpoints (4 new)**:
+    - `GET /nfl/teams` - List all teams with game counts
+    - `GET /nfl/teams/{symbol}/stats` - Win/loss stats, streaks, point differential
+    - `GET /nfl/teams/{symbol}/games` - Paginated game history with season/outcome filters
+    - `GET /nfl/games/recent` - Recent games across all teams
+  - **Frontend Dashboard** (`/nfl`):
+    - TeamSelector: 8-team selection grid
+    - TeamStatsCard: Record, streaks, point differential, recent 10 games
+    - GamesTable: Paginated with filters (season, outcome)
+    - TypeScript types for all NFL data structures
+  - **Multi-Source Data Integration**:
+    - Historical: GitHub CSVs (nflverse + Nolanole weather data)
+    - Current: SportsData.io API with ESPN fallback
+    - Season detection: `utils/nfl_schedule.py` with week calculation
+  - **Documentation**: `backend/NFL_DATA_SETUP.md` with setup guide and troubleshooting
+  - Earlier: Added `asset_projections` store (now `projections`) for Baker NFL win probabilities with opponent context, spread/total metadata
+  - UI surfaces NFL projections with opponent context, spread/total, home/away badge, delta vs prior, recency stamp
+  - Ingestion observability: `/ingest/health` endpoint + `ingest_status` table tracks last success/error/row counts
+  - Header-based auth for Baker; scheduler wired for hourly projections; Elo job can be disabled via `DISABLE_NFL_ELO_INGEST`
+
 - **Issues / Debt**
-  - NFL Elo source (FiveThirtyEight CSV) currently fails; ingestion disabled via env when noisy. Needs a replacement source or advanced-query path.
-  - Venv shebang drifted when paths moved; prefer `uv run` and avoid stale venvs.
-  - RSS `feed_metadata` required a schema init; keep migrations explicit going forward.
-- **Next Steps (to make forecasting sharper)**
-  - Add Baker advanced-query fetch to reduce misses and ingest moneylines/spreads directly; merge with changelog flow and update `ingest_status`. (Advanced query currently returns 422; need valid request schema from SportsDataIO.)
-  - Broaden projections targets via `BAKER_TEAM_MAP` and store opponent odds cleanly; expose a lightweight projections read endpoint per team/game with trends.
-  - Extend `/ingest/health` with per-job errors/row counts (RSS, projections, numeric backfills) and surface a health badge in the UI.
-  - Data depth: add opponent- and game-level features (e.g., implied win prob deltas, spread/total movements) and optional trendlines in the sports card.
-  - Formalize migrations (SQL) for all future schema changes; keep indexes in migrations, not inline DDL.
+  - NFL Elo source (FiveThirtyEight CSV) currently fails; ingestion disabled via env when noisy. Needs replacement source.
+  - Connection pool cleanup warnings (minor; Python scripts show thread cleanup warnings on exit)
+  - RSS `feed_metadata` required schema init; keep migrations explicit going forward
+
+- **Next Steps (Phase 2 - Advanced NFL Features)**
+  - Dedicated `game_outcomes` table with opponent, scores, venue, weather
+  - Multi-metric forecasts (point spread, total points/over-under)
+  - Advanced features: weather conditions, injury reports, rest days, travel distance
+  - Real-time odds integration and line movement tracking
+  - Add Baker advanced-query fetch for moneylines/spreads directly
+  - Extend `/ingest/health` with per-job errors/row counts and surface health badge in UI
+  - Backtesting framework for NFL forecasts
+  - Model registry and A/B testing between forecasters
+  - Formalize migrations (SQL) for all future schema changes

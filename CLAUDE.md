@@ -579,14 +579,40 @@ For deeper understanding, consult:
 - ✅ Developer experience: Zero-config `./run-dev.sh`, clean shutdown
 - ✅ Database schema: Added `projections` table for external NFL projections
 - ✅ Vector search: Production-ready with pgvector adapter and Weaviate integration
-- ✅ **NFL Event-Based Forecasting**: Dynamic win probability predictions using semantic similarity
-  - Multi-source data: ESPN API (primary) + Pro Football Reference (fallback)
-  - Dallas Cowboys: 15 historical games backfilled (2024-2025 seasons)
-  - Real-time upcoming game detection via ESPN API
-  - Event-to-game temporal mapping (finds relevant events 1-7 days before games)
-  - Semantic similarity forecasting (reuses crypto architecture)
-  - API endpoints: `/forecast/nfl/event/{id}` and `/forecast/nfl/team/{symbol}/next-game`
-  - Automatic updates as RSS feeds ingest new sports events
+- ✅ **NFL Analytics System**: Complete ML forecasting with daily updates
+  - **Data Coverage**: 1,699 games across 8 teams (2012-2024)
+    - Teams: Cowboys, Chiefs, Giants, Eagles, Bills, Lions, 49ers, Commanders
+    - Historical backfill: GitHub CSVs (nflverse + Nolanole weather data)
+    - Current season: SportsData.io API integration
+  - **ML Model v2.0**: Logistic regression classifier
+    - 58.8% test accuracy on 850 games (4 NFC East teams)
+    - 9 features: win_pct, point_diff, streaks, home/away, etc.
+    - L2 regularization to prevent overfitting
+    - Per-symbol train/test split (no lookahead bias)
+  - **Daily Updates** (Season-Aware):
+    - Automatic daily fetches during NFL season (Sept-Feb only)
+    - 4-week lookback window to catch delayed scores
+    - Season detection: `utils/nfl_schedule.py` with week calculation
+    - Cost-efficient: ~18,000 API calls/year (within free tier)
+  - **API Endpoints** (4 new):
+    - `GET /nfl/teams` - List all teams with game counts
+    - `GET /nfl/teams/{symbol}/stats` - Win/loss stats, streaks, point differential
+    - `GET /nfl/teams/{symbol}/games` - Paginated game history with filters
+    - `GET /nfl/games/recent` - Recent games across all teams
+  - **Frontend Dashboard** (`/nfl`):
+    - TeamSelector component: 8-team selection grid
+    - TeamStatsCard: Record, streaks, point differential, recent games
+    - GamesTable: Paginated with season/outcome filters
+    - TypeScript types for all NFL data structures
+  - **Event-Based Forecasting**: Semantic similarity to predict game outcomes
+    - Event-to-game temporal mapping (1-7 days before games)
+    - Reuses crypto forecasting architecture
+    - API: `/forecast/nfl/event/{id}` and `/forecast/nfl/team/{symbol}/next-game`
+  - **Multi-Source Data Integration**:
+    - ESPN API (primary): Real-time game data
+    - Pro Football Reference (fallback): Historical stats
+    - SportsData.io: Scheduled updates
+  - **Setup Guide**: `backend/NFL_DATA_SETUP.md` with troubleshooting
 
 **Recent Fixes (December 5-6, 2025):**
 
@@ -749,29 +775,38 @@ For deeper understanding, consult:
 
 ### Plans & Future Work
 
-**Completed (December 8, 2025):**
+**Completed (December 10, 2025):**
 - [x] Projections table renamed and migrated ✅
 - [x] Non-blocking startup for faster development ✅
 - [x] Persistent embedding cache to reduce API costs ✅
 - [x] HTTP caching for RSS feeds ✅
 - [x] Universal symbol filtering system ✅
 - [x] Team-specific event filtering bug fixed ✅
+- [x] **NFL Analytics System** ✅
+  - [x] Daily automated game outcome updates (season-aware)
+  - [x] ML forecaster v2.0 with 58.8% test accuracy
+  - [x] 4 new API endpoints for teams, stats, games
+  - [x] Frontend dashboard with TeamSelector, TeamStatsCard, GamesTable
+  - [x] 1,699 games backfilled across 8 teams (2012-2024)
+  - [x] Complete documentation in NFL_DATA_SETUP.md
 
 **Next Steps:**
-- [ ] Comprehensive NFL backfill for all 6 teams (currently only Cowboys)
 - [ ] Fix connection pool cleanup warnings
 - [ ] Consider removing `embed` column from PostgreSQL (storage optimization)
 - [ ] Add Weaviate availability monitoring
 - [ ] Explore Weaviate hybrid search (keyword + vector)
-- [ ] ML forecaster beyond baseline (XGBoost/LightGBM)
+- [ ] ML forecaster beyond baseline (XGBoost/LightGBM for crypto)
 - [ ] Production deployment (Render/Fly.io + Vercel)
 - [ ] Backtesting framework for NFL forecasts
 - [ ] Model registry and A/B testing
 - [ ] Structured logging (replace print statements)
 - [ ] Rate limiting middleware
 - [ ] Integration tests
-- [ ] Dedicated `game_outcomes` table (Phase 2 of NFL plan)
-- [ ] Multi-metric forecasts (spread, total points)
+- [ ] NFL Phase 2:
+  - [ ] Dedicated `game_outcomes` table with opponent, scores, venue
+  - [ ] Multi-metric forecasts (spread, total points)
+  - [ ] Advanced features: weather, injuries, rest days
+  - [ ] Real-time odds integration
 
 **Vector Store Architecture Notes:**
 - Weaviate handles up to millions of vectors with HNSW indexing (O(log n) search)
