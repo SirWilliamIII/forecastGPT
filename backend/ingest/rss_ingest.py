@@ -59,6 +59,10 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
         "url": "https://bitcoinmagazine.com/feed",
         "domain": DOMAIN_CRYPTO,
     },
+    "bitcoinist": {
+        "url": "https://bitcoinist.com/feed/",
+        "domain": DOMAIN_CRYPTO
+    }
 
     # Tech/AI feeds - Market-moving tech (IPOs, product launches, AI breakthroughs)
     "techcrunch": {
@@ -93,6 +97,14 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
     },
     "the_athletic": {
         "url": "https://theathletic.com/feeds/rss/news/",
+        "domain": DOMAIN_SPORTS,
+    },
+    "promania": {
+        "url": "https://profootballmania.com/feed/",
+        "domain": DOMAIN_SPORTS,
+    },
+    "espn": {
+        "url": "https://www.espn.com/espn/rss/nfl/news",
         "domain": DOMAIN_SPORTS,
     },
     "new_york_times_sports": {
