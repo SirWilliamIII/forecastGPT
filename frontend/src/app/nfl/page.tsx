@@ -16,6 +16,7 @@ import { NFLEventForecast } from "@/components/NFLEventForecast";
 import { TeamSelector } from "@/components/TeamSelector";
 import { TeamStatsCard } from "@/components/TeamStatsCard";
 import { GamesTable } from "@/components/GamesTable";
+import { ForecastTimeline, EventImpactCard } from "@/components/nfl";
 import {
   getRecentEvents,
   getLatestProjections,
@@ -24,6 +25,8 @@ import {
   getNFLTeams,
   getNFLTeamStats,
   getNFLTeamGames,
+  getForecastTimeline,
+  getEventImpacts,
 } from "@/lib/api";
 
 export default function NFLPage() {
@@ -121,6 +124,32 @@ export default function NFLPage() {
     gcTime: 30 * 60 * 1000,
   });
 
+  // Fetch forecast timeline
+  const {
+    data: forecastTimeline,
+    isLoading: timelineLoading,
+    refetch: refetchTimeline,
+  } = useQuery({
+    queryKey: ["nfl-forecast-timeline", selectedTeam],
+    queryFn: () => getForecastTimeline(selectedTeam, 30),
+    enabled: !!selectedTeam,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
+  // Fetch event impacts
+  const {
+    data: eventImpacts,
+    isLoading: impactsLoading,
+    refetch: refetchImpacts,
+  } = useQuery({
+    queryKey: ["nfl-event-impacts", selectedTeam],
+    queryFn: () => getEventImpacts(selectedTeam, 10),
+    enabled: !!selectedTeam,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
+
   useEffect(() => {
     if (teamsData && Object.keys(teamsData).length > 0) {
       setProjectionTeams(teamsData);
@@ -150,6 +179,8 @@ export default function NFLPage() {
     refetchEvents();
     refetchProjections();
     refetchForecast();
+    refetchTimeline();
+    refetchImpacts();
   };
 
   return (
@@ -186,6 +217,14 @@ export default function NFLPage() {
         <NFLEventForecast
           forecast={eventForecast}
           isLoading={forecastLoading}
+        />
+      </section>
+
+      {/* Forecast Timeline */}
+      <section>
+        <ForecastTimeline
+          data={forecastTimeline}
+          isLoading={timelineLoading}
         />
       </section>
 
@@ -236,6 +275,14 @@ export default function NFLPage() {
 
         {/* Right Column: Projections and Events */}
         <aside className="space-y-6">
+          {/* Event Impacts */}
+          <section>
+            <EventImpactCard
+              impacts={eventImpacts}
+              isLoading={impactsLoading}
+            />
+          </section>
+
           {/* Projections */}
           <section className="space-y-4">
             <div className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/10 p-3">

@@ -75,7 +75,7 @@ export default function EventDetailPage({
       {/* Symbol Selector */}
       <div className="flex items-center gap-4">
         <span className="text-sm text-gray-400">Analyze for:</span>
-        <SymbolSelector value={symbol} onChange={setSymbol} />
+        <SymbolSelector value={symbol} onChange={(s) => setSymbol(s as typeof symbol)} />
       </div>
 
       {/* Forecast Comparison */}

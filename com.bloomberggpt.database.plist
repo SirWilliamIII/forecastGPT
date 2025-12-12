@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Service identification -->
+    <key>Label</key>
+    <string>com.bloomberggpt.database</string>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/will/Programming/Projects/bloombergGPT</string>
+
+    <!-- Command to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/docker</string>
+        <string>compose</string>
+        <string>up</string>
+        <string>-d</string>
+        <string>db</string>
+        <string>adminer</string>
+    </array>
+
+    <!-- Auto-start on boot -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Run once (docker compose manages the containers) -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/Users/will/Programming/Projects/bloombergGPT/logs/database-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/will/Programming/Projects/bloombergGPT/logs/database-stderr.log</string>
+
+    <!-- Process type -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

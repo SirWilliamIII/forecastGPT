@@ -152,32 +152,61 @@ def build_return_samples_for_event(
                 if is_symbol_mentioned(text_to_check, symbol):
                     filtered_neighbors.append(n)
 
-            # For each neighbor, get realized_return after its timestamp
-            for n in filtered_neighbors:
-                event_uuid = str(n["id"])
-                dist = distance_map.get(event_uuid, 0.0)
-                ts = n["timestamp"]
-                window_end = ts + timedelta(minutes=price_window_minutes)
+            # Batch query for all neighbors' realized returns (PERFORMANCE OPTIMIZATION)
+            # Instead of 1 query per neighbor (25+ queries), do 1 batch query for all
+            if filtered_neighbors:
+                # Prepare batch data
+                neighbor_data = []
+                for n in filtered_neighbors:
+                    event_uuid = str(n["id"])
+                    dist = distance_map.get(event_uuid, 0.0)
+                    ts = n["timestamp"]
+                    window_end = ts + timedelta(minutes=price_window_minutes)
+                    neighbor_data.append((event_uuid, ts, window_end, dist))
 
+                # Extract arrays for PostgreSQL UNNEST
+                event_ids = [d[0] for d in neighbor_data]
+                window_starts = [d[1] for d in neighbor_data]
+                window_ends = [d[2] for d in neighbor_data]
+
+                # Single batch query using UNNEST and LATERAL join
+                # This finds the first realized_return in each neighbor's time window
                 cur.execute(
                     """
-                    SELECT realized_return
-                    FROM asset_returns
-                    WHERE symbol = %s
-                      AND horizon_minutes = %s
-                      AND as_of >= %s
-                      AND as_of <= %s
-                    ORDER BY as_of ASC
-                    LIMIT 1
+                    WITH neighbor_windows AS (
+                        SELECT
+                            unnest(%s::text[]) as event_id,
+                            unnest(%s::timestamptz[]) as window_start,
+                            unnest(%s::timestamptz[]) as window_end
+                    )
+                    SELECT
+                        nw.event_id,
+                        ar.realized_return
+                    FROM neighbor_windows nw
+                    LEFT JOIN LATERAL (
+                        SELECT realized_return
+                        FROM asset_returns
+                        WHERE symbol = %s
+                          AND horizon_minutes = %s
+                          AND as_of >= nw.window_start
+                          AND as_of <= nw.window_end
+                        ORDER BY as_of ASC
+                        LIMIT 1
+                    ) ar ON true
+                    WHERE ar.realized_return IS NOT NULL
                     """,
-                    (symbol, horizon_minutes, ts, window_end),
+                    (event_ids, window_starts, window_ends, symbol, horizon_minutes),
                 )
-                r_row = cur.fetchone()
-                if not r_row:
-                    continue
 
-                realized = float(r_row["realized_return"])
-                samples.append((dist, realized))
+                # Parse batch results into dict
+                results = {}
+                for row in cur.fetchall():
+                    results[row["event_id"]] = float(row["realized_return"])
+
+                # Build samples from results
+                for event_uuid, ts, window_end, dist in neighbor_data:
+                    if event_uuid in results:
+                        samples.append((dist, results[event_uuid]))
 
     return samples
 

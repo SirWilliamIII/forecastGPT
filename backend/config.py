@@ -206,6 +206,28 @@ NFL_MIN_GAMES_FOR_FEATURES = int(os.getenv("NFL_MIN_GAMES_FOR_FEATURES", "3"))  
 NFL_FORM_WINDOW = int(os.getenv("NFL_FORM_WINDOW", "3"))  # Recent form window
 
 # ═══════════════════════════════════════════════════════════════════════
+# Forecast Snapshot Backfill Configuration
+# ═══════════════════════════════════════════════════════════════════════
+
+# Backfill time window (in days)
+FORECAST_BACKFILL_DAYS = int(os.getenv("FORECAST_BACKFILL_DAYS", "60"))  # Default: 60 days
+
+# Daily snapshot generation
+FORECAST_DAILY_SNAPSHOT_ENABLED = os.getenv("FORECAST_DAILY_SNAPSHOT_ENABLED", "true").lower() in ("true", "1", "yes")
+FORECAST_DAILY_SNAPSHOT_HOUR = int(os.getenv("FORECAST_DAILY_SNAPSHOT_HOUR", "12"))  # UTC hour for daily snapshots
+
+# Batch size for database inserts
+FORECAST_BACKFILL_BATCH_SIZE = int(os.getenv("FORECAST_BACKFILL_BATCH_SIZE", "100"))
+
+# Forecast types to compute
+FORECAST_TYPES_ENABLED = os.getenv("FORECAST_TYPES_ENABLED", "ml_model_v2,event_weighted").split(",")
+
+# NFL-specific backfill settings
+NFL_FORECAST_BACKFILL_DAYS = int(os.getenv("NFL_FORECAST_BACKFILL_DAYS", "60"))  # Override for NFL
+NFL_FORECAST_MIN_EVENT_AGE_HOURS = int(os.getenv("NFL_FORECAST_MIN_EVENT_AGE_HOURS", "1"))  # Min age to backfill
+NFL_FORECAST_MAX_EVENTS_PER_DAY = int(os.getenv("NFL_FORECAST_MAX_EVENTS_PER_DAY", "50"))  # Limit events processed
+
+# ═══════════════════════════════════════════════════════════════════════
 # Feature flags
 # ═══════════════════════════════════════════════════════════════════════
 

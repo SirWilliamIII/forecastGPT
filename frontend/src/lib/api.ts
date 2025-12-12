@@ -203,3 +203,30 @@ export async function getRecentNFLGames(
     `${API_BASE}/nfl/games/recent?${params}`
   );
 }
+
+// NFL Forecast Timeline
+export async function getForecastTimeline(
+  symbol: string,
+  days = 30
+): Promise<import("@/types/api").ForecastTimeline> {
+  const params = new URLSearchParams({
+    symbol,
+    days: String(days),
+  });
+  return fetchJson<import("@/types/api").ForecastTimeline>(
+    `${API_BASE}/nfl/forecast/timeline?${params}`
+  );
+}
+
+export async function getEventImpacts(
+  symbol: string,
+  limit = 10
+): Promise<import("@/types/api").EventImpact[]> {
+  const params = new URLSearchParams({
+    symbol,
+    limit: String(limit),
+  });
+  return fetchJson<import("@/types/api").EventImpact[]>(
+    `${API_BASE}/nfl/forecast/event-impacts?${params}`
+  );
+}

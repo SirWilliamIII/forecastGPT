@@ -61,8 +61,12 @@ RSS_FEEDS: Dict[str, Dict[str, str]] = {
     },
     "bitcoinist": {
         "url": "https://bitcoinist.com/feed/",
-        "domain": DOMAIN_CRYPTO
-    }
+        "domain": DOMAIN_CRYPTO,
+    },
+    "monero_observer": {
+        "url": "https://monero.observer/feed-mini.xml",
+        "domain": DOMAIN_CRYPTO,
+    },
 
     # Tech/AI feeds - Market-moving tech (IPOs, product launches, AI breakthroughs)
     "techcrunch": {

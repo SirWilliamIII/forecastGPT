@@ -109,6 +109,76 @@ ON events USING GIN (tags);
 CREATE INDEX idx_events_meta
 ON events USING GIN (meta);
 
+-- Forecast snapshots: time-series storage of forecast values for timeline graphs
+-- Stores historical predictions to visualize how forecasts change over time as new events occur
+-- Example: "3 days ago: 65% win prob → after QB injury: 52% → now: 58%"
+CREATE TABLE forecast_snapshots (
+    id SERIAL PRIMARY KEY,
+
+    -- What is being forecasted
+    symbol VARCHAR(50) NOT NULL,             -- 'NFL:DAL_COWBOYS', 'BTC-USD', etc.
+    forecast_type VARCHAR(50) NOT NULL,      -- 'win_probability', 'price_return', 'point_spread'
+
+    -- When this forecast was made
+    snapshot_at TIMESTAMPTZ NOT NULL,        -- When this forecast snapshot was taken
+
+    -- The forecast value
+    forecast_value DOUBLE PRECISION NOT NULL, -- Win probability (0.0-1.0), return %, spread, etc.
+    confidence DOUBLE PRECISION,              -- Confidence score (0.0-1.0), nullable
+    sample_size INTEGER,                      -- Number of similar events/games used, nullable
+
+    -- Forecast source and version
+    model_source VARCHAR(50) NOT NULL,       -- 'ml_model_v2', 'baker_api', 'event_weighted', 'naive_baseline'
+    model_version VARCHAR(20),               -- 'v2.0', 'v2.1', etc. (nullable for external sources)
+
+    -- Optional event attribution (what triggered this snapshot?)
+    event_id UUID REFERENCES events(id) ON DELETE SET NULL,  -- Triggering event (nullable)
+    event_summary TEXT,                      -- Brief event description for UI tooltips
+
+    -- Target prediction metadata
+    target_date TIMESTAMPTZ,                 -- When the forecasted event will occur (e.g., game date)
+    horizon_minutes INTEGER,                 -- Forecast horizon in minutes (nullable for non-time-based)
+
+    -- Model metadata (flexible JSON for features, hyperparams, etc.)
+    metadata JSONB,                          -- {features_used: [...], feature_version: "v1.0", training_date: "2025-12-01"}
+
+    -- Audit trail
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    -- Prevent exact duplicates (same symbol + type + source + time)
+    -- Allows multiple snapshots at the same timestamp from different sources
+    CONSTRAINT forecast_snapshots_unique UNIQUE(symbol, forecast_type, model_source, snapshot_at)
+);
+
+-- Timeline queries: Get forecast evolution for a symbol over date range
+-- Query: WHERE symbol = 'NFL:DAL_COWBOYS' AND forecast_type = 'win_probability'
+--        AND snapshot_at BETWEEN '2025-12-01' AND '2025-12-11' ORDER BY snapshot_at DESC
+CREATE INDEX idx_forecast_snapshots_timeline ON forecast_snapshots (symbol, forecast_type, snapshot_at DESC);
+
+-- Compare models: Get all forecast sources at specific time (A/B testing)
+-- Query: WHERE symbol = 'NFL:DAL_COWBOYS' AND snapshot_at = '2025-12-10 14:00:00+00'
+CREATE INDEX idx_forecast_snapshots_compare ON forecast_snapshots (symbol, snapshot_at DESC, model_source);
+
+-- Event attribution: Find forecasts influenced by specific event
+-- Query: WHERE event_id = '123e4567-e89b-12d3-a456-426614174000'
+CREATE INDEX idx_forecast_snapshots_event ON forecast_snapshots (event_id) WHERE event_id IS NOT NULL;
+
+-- Recent snapshots: Dashboard queries across all symbols
+-- Query: SELECT DISTINCT ON (symbol, forecast_type, model_source) * ORDER BY snapshot_at DESC
+CREATE INDEX idx_forecast_snapshots_recent ON forecast_snapshots (snapshot_at DESC);
+
+-- Target date: Forecasts for upcoming games/events
+-- Query: WHERE target_date BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+CREATE INDEX idx_forecast_snapshots_target ON forecast_snapshots (target_date) WHERE target_date IS NOT NULL;
+
+-- Model versioning: A/B testing and performance comparison
+-- Query: WHERE model_source = 'ml_model_v2' AND model_version = 'v2.0'
+CREATE INDEX idx_forecast_snapshots_model ON forecast_snapshots (model_source, model_version) WHERE model_version IS NOT NULL;
+
+-- Metadata queries: Feature version and model configuration
+-- Query: WHERE metadata->>'feature_version' = 'v1.0'
+CREATE INDEX idx_forecast_snapshots_metadata ON forecast_snapshots USING GIN (metadata);
+
 -- Note: pgvector indexes (IVFFlat, HNSW) have a 2000 dimension limit.
 -- For 3072-dim vectors, we skip the index and rely on exact search.
 -- This is fine for < 100k events. For larger scale, consider dimensionality reduction.

@@ -461,6 +461,51 @@ class NFLGamesResponse(BaseModel):
     page_size: int
 
 
+class ForecastSnapshot(BaseModel):
+    """Single forecast snapshot"""
+    timestamp: datetime
+    forecast_value: float
+    confidence: float
+    model_source: str
+    model_version: Optional[str] = None
+    event_id: Optional[str] = None
+    event_summary: Optional[str] = None
+    sample_size: Optional[int] = None
+    target_date: Optional[datetime] = None
+    horizon_minutes: Optional[int] = None
+
+
+class ForecastTimelineOut(BaseModel):
+    """Forecast timeline response"""
+    symbol: str
+    forecast_type: str
+    start_date: datetime
+    end_date: datetime
+    snapshots_count: int
+    snapshots: List[ForecastSnapshot]
+
+
+class EventImpactOut(BaseModel):
+    """Event impact analysis response"""
+    event_id: str
+    event_title: str
+    event_timestamp: datetime
+    symbol: str
+
+    # Forecast before/after
+    forecast_before: Optional[float] = None
+    forecast_after: Optional[float] = None
+    forecast_change: Optional[float] = None
+
+    # Similar historical events
+    similar_events_count: int
+    historical_impact_avg: Optional[float] = None
+
+    # Next game context
+    next_game_date: Optional[datetime] = None
+    days_until_game: Optional[float] = None
+
+
 # ---------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------
@@ -1836,3 +1881,277 @@ def get_recent_nfl_games(
         )
 
     return games
+
+
+# ---------------------------------------------------------------------
+# Forecast Timeline & Event Impact Endpoints
+# ---------------------------------------------------------------------
+
+
+@app.get("/nfl/teams/{symbol}/forecast-timeline", response_model=ForecastTimelineOut)
+def get_forecast_timeline(
+    symbol: str,
+    forecast_type: str = Query("win_probability", description="Forecast type (e.g., 'win_probability')"),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back"),
+    model_source: Optional[str] = Query(None, description="Filter by model source (e.g., 'event_weighted', 'ml_model_v2')"),
+) -> ForecastTimelineOut:
+    """
+    Get forecast timeline showing how predictions evolved over time.
+
+    Returns a time series of forecast snapshots, enabling visualization of:
+    - How forecasts changed as new events occurred
+    - Comparison of different forecast models over time
+    - Event-triggered forecast updates vs daily baseline
+
+    **Example:**
+    ```
+    GET /nfl/teams/NFL:DAL_COWBOYS/forecast-timeline?days=30&forecast_type=win_probability
+    GET /nfl/teams/NFL:DAL_COWBOYS/forecast-timeline?days=7&model_source=event_weighted
+    ```
+
+    **Response:**
+    ```json
+    {
+      "symbol": "NFL:DAL_COWBOYS",
+      "forecast_type": "win_probability",
+      "start_date": "2025-11-11T00:00:00Z",
+      "end_date": "2025-12-11T00:00:00Z",
+      "snapshots_count": 45,
+      "snapshots": [
+        {
+          "timestamp": "2025-12-10T14:23:00Z",
+          "forecast_value": 0.58,
+          "confidence": 0.72,
+          "model_source": "event_weighted",
+          "model_version": "v1.0",
+          "event_id": "123e4567-e89b-12d3-a456-426614174000",
+          "event_summary": "Dak Prescott injury update: expected to play Sunday",
+          "sample_size": 42,
+          "target_date": "2025-12-15T18:00:00Z",
+          "horizon_minutes": 7560
+        },
+        ...
+      ]
+    }
+    ```
+
+    **Use case:** Timeline chart showing forecast evolution with event markers
+    """
+    now = datetime.now(tz=timezone.utc)
+    start_date = now - timedelta(days=days)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            # Build query with optional model_source filter
+            if model_source:
+                cur.execute(
+                    """
+                    SELECT
+                        snapshot_at,
+                        forecast_value,
+                        confidence,
+                        model_source,
+                        model_version,
+                        event_id,
+                        event_summary,
+                        sample_size,
+                        target_date,
+                        horizon_minutes
+                    FROM forecast_snapshots
+                    WHERE symbol = %s
+                      AND forecast_type = %s
+                      AND model_source = %s
+                      AND snapshot_at BETWEEN %s AND %s
+                    ORDER BY snapshot_at ASC
+                    """,
+                    (symbol, forecast_type, model_source, start_date, now),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT
+                        snapshot_at,
+                        forecast_value,
+                        confidence,
+                        model_source,
+                        model_version,
+                        event_id,
+                        event_summary,
+                        sample_size,
+                        target_date,
+                        horizon_minutes
+                    FROM forecast_snapshots
+                    WHERE symbol = %s
+                      AND forecast_type = %s
+                      AND snapshot_at BETWEEN %s AND %s
+                    ORDER BY snapshot_at ASC
+                    """,
+                    (symbol, forecast_type, start_date, now),
+                )
+
+            rows = cur.fetchall()
+
+    snapshots = []
+    for row in rows:
+        snapshots.append(
+            ForecastSnapshot(
+                timestamp=row["snapshot_at"],
+                forecast_value=float(row["forecast_value"]),
+                confidence=float(row["confidence"]) if row["confidence"] is not None else 0.0,
+                model_source=row["model_source"],
+                model_version=row["model_version"],
+                event_id=str(row["event_id"]) if row["event_id"] else None,
+                event_summary=row["event_summary"],
+                sample_size=row["sample_size"],
+                target_date=row["target_date"],
+                horizon_minutes=row["horizon_minutes"],
+            )
+        )
+
+    return ForecastTimelineOut(
+        symbol=symbol,
+        forecast_type=forecast_type,
+        start_date=start_date,
+        end_date=now,
+        snapshots_count=len(snapshots),
+        snapshots=snapshots,
+    )
+
+
+@app.get("/nfl/events/{event_id}/impact", response_model=EventImpactOut)
+def get_event_impact(
+    event_id: UUID,
+    symbol: str = Query(..., description="Team symbol (e.g., 'NFL:DAL_COWBOYS')"),
+) -> EventImpactOut:
+    """
+    Analyze the impact of a specific event on team forecasts.
+
+    Shows:
+    - Forecast value before and after the event
+    - Change in forecast (positive = good news, negative = bad news)
+    - Similar historical events and their average impact
+    - Next game context
+
+    **Example:**
+    ```
+    GET /nfl/events/123e4567-e89b-12d3-a456-426614174000/impact?symbol=NFL:DAL_COWBOYS
+    ```
+
+    **Response:**
+    ```json
+    {
+      "event_id": "123e4567-e89b-12d3-a456-426614174000",
+      "event_title": "Dak Prescott injury update: expected to play Sunday",
+      "event_timestamp": "2025-12-10T14:23:00Z",
+      "symbol": "NFL:DAL_COWBOYS",
+      "forecast_before": 0.52,
+      "forecast_after": 0.58,
+      "forecast_change": 0.06,
+      "similar_events_count": 42,
+      "historical_impact_avg": 0.05,
+      "next_game_date": "2025-12-15T18:00:00Z",
+      "days_until_game": 5.3
+    }
+    ```
+
+    **Use case:** Event detail page showing how news affected team's win probability
+    """
+    # Get event details
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT title, timestamp
+                FROM events
+                WHERE id = %s
+                """,
+                (event_id,),
+            )
+            event = cur.fetchone()
+
+            if not event:
+                raise HTTPException(status_code=404, detail="Event not found")
+
+    event_timestamp = event["timestamp"]
+    event_title = event["title"]
+
+    # Get forecast snapshot for this event
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    forecast_value,
+                    confidence,
+                    sample_size,
+                    target_date,
+                    horizon_minutes
+                FROM forecast_snapshots
+                WHERE symbol = %s
+                  AND event_id = %s
+                  AND forecast_type = 'win_probability'
+                ORDER BY snapshot_at DESC
+                LIMIT 1
+                """,
+                (symbol, event_id),
+            )
+            snapshot = cur.fetchone()
+
+    if not snapshot:
+        # Event hasn't been processed yet - compute on the fly
+        from models.nfl_event_forecaster import forecast_nfl_event
+
+        result = forecast_nfl_event(
+            event_id=event_id,
+            team_symbol=symbol,
+            event_timestamp=event_timestamp,
+        )
+
+        forecast_after = result.win_probability
+        target_date = result.next_game_date
+        days_until = result.days_until_game
+        similar_events_count = result.similar_events_found
+    else:
+        forecast_after = float(snapshot["forecast_value"])
+        target_date = snapshot["target_date"]
+        days_until = snapshot["horizon_minutes"] / 1440.0 if snapshot["horizon_minutes"] else None
+        similar_events_count = snapshot["sample_size"] or 0
+
+    # Get forecast before event (most recent snapshot before event timestamp)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT forecast_value
+                FROM forecast_snapshots
+                WHERE symbol = %s
+                  AND forecast_type = 'win_probability'
+                  AND snapshot_at < %s
+                ORDER BY snapshot_at DESC
+                LIMIT 1
+                """,
+                (symbol, event_timestamp),
+            )
+            before = cur.fetchone()
+
+    forecast_before = float(before["forecast_value"]) if before else None
+    forecast_change = (forecast_after - forecast_before) if (forecast_before is not None and forecast_after is not None) else None
+
+    # Calculate historical impact average (from similar events)
+    # This would require additional queries to get historical event outcomes
+    # For now, we'll use a placeholder based on sample size
+    historical_impact_avg = forecast_change  # Simplified - could be more sophisticated
+
+    return EventImpactOut(
+        event_id=str(event_id),
+        event_title=event_title,
+        event_timestamp=event_timestamp,
+        symbol=symbol,
+        forecast_before=forecast_before,
+        forecast_after=forecast_after,
+        forecast_change=forecast_change,
+        similar_events_count=similar_events_count,
+        historical_impact_avg=historical_impact_avg,
+        next_game_date=target_date,
+        days_until_game=days_until,
+    )

@@ -178,3 +178,42 @@ export interface NFLGamesResponse {
   page: number;
   page_size: number;
 }
+
+// NFL Forecast Timeline
+export interface ForecastTimelinePoint {
+  timestamp: string;
+  forecasts: {
+    ml_model_v2?: {
+      value: number;
+      confidence: number;
+      sample_size: number;
+    };
+    baker_api?: {
+      value: number;
+    };
+    event_weighted?: {
+      value: number;
+      confidence: number;
+    };
+  };
+  event?: {
+    id: string;
+    title: string;
+    impact: number;
+  };
+}
+
+export interface ForecastTimeline {
+  symbol: string;
+  timeline: ForecastTimelinePoint[];
+}
+
+export interface EventImpact {
+  event_id: string;
+  event_title: string;
+  event_date: string;
+  win_prob_before: number;
+  win_prob_after: number;
+  impact: number;
+  similar_events_count: number;
+}

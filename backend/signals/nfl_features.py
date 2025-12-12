@@ -108,6 +108,146 @@ def get_team_regex_pattern(team_symbol: str) -> Optional[str]:
     return '(' + '|'.join(cleaned_patterns) + ')'
 
 
+def preload_team_games(
+    team_symbol: str,
+    start_date: datetime,
+    end_date: datetime,
+    max_days_ahead: int = NFL_MAX_DAYS_AHEAD,
+) -> list[GameInfo]:
+    """
+    Preload ALL games for a team in a date range (PERFORMANCE OPTIMIZATION).
+
+    This fetches all games ONCE instead of repeatedly calling find_next_game() per event.
+    Used during backfill to reduce ESPN API calls from 30+ to 1-2.
+
+    Args:
+        team_symbol: Team symbol (e.g., "NFL:DAL_COWBOYS")
+        start_date: Start of date range (timezone-aware UTC)
+        end_date: End of date range (timezone-aware UTC)
+        max_days_ahead: Maximum days to look ahead for next game
+
+    Returns:
+        List of GameInfo sorted by game_date
+    """
+    if start_date.tzinfo is None or end_date.tzinfo is None:
+        raise ValueError("start_date and end_date must be timezone-aware UTC")
+
+    games = []
+
+    # Fetch all completed games from database
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    as_of,
+                    price_end - price_start as point_diff,
+                    realized_return
+                FROM asset_returns
+                WHERE symbol = %s
+                  AND as_of BETWEEN %s AND %s
+                ORDER BY as_of ASC
+                """,
+                (team_symbol, start_date, end_date + timedelta(days=max_days_ahead)),
+            )
+
+            for row in cur.fetchall():
+                game_date = row["as_of"]
+                point_diff = float(row["point_diff"])
+
+                games.append(GameInfo(
+                    game_date=game_date,
+                    symbol=team_symbol,
+                    opponent_abbr="UNK",
+                    opponent_name=None,
+                    horizon_minutes=0,  # Will be computed per event
+                    is_home=None,
+                    point_differential=point_diff,
+                ))
+
+    # Fetch upcoming scheduled games from ESPN (single API call)
+    try:
+        from utils.espn_api import fetch_upcoming_games
+
+        team_abbr = team_symbol.split(":")[1].split("_")[0] if ":" in team_symbol else None
+
+        if team_abbr:
+            upcoming_games = fetch_upcoming_games(team_abbr, max_days_ahead=max_days_ahead)
+
+            for game_date, opp_abbr, opp_name in upcoming_games:
+                # Only include if in our date range
+                if start_date <= game_date <= end_date + timedelta(days=max_days_ahead):
+                    games.append(GameInfo(
+                        game_date=game_date,
+                        symbol=team_symbol,
+                        opponent_abbr=opp_abbr,
+                        opponent_name=opp_name,
+                        horizon_minutes=0,
+                        is_home=None,
+                        point_differential=None,
+                    ))
+    except Exception as e:
+        print(f"[nfl_features] Error preloading games from ESPN: {e}")
+
+    # Sort by game date and return
+    return sorted(games, key=lambda g: g.game_date)
+
+
+def find_next_game_cached(
+    team_symbol: str,
+    reference_time: datetime,
+    preloaded_games: list[GameInfo],
+    cache: dict,
+    max_days_ahead: int = NFL_MAX_DAYS_AHEAD,
+) -> Optional[GameInfo]:
+    """
+    Find next game using preloaded games and session cache (PERFORMANCE OPTIMIZATION).
+
+    Args:
+        team_symbol: Team symbol (e.g., "NFL:DAL_COWBOYS")
+        reference_time: Reference timestamp (must be timezone-aware UTC)
+        preloaded_games: List of preloaded GameInfo objects
+        cache: Session-scoped cache dict {(team_symbol, date): GameInfo}
+        max_days_ahead: Maximum days to look ahead
+
+    Returns:
+        GameInfo if found, None otherwise
+    """
+    if reference_time.tzinfo is None:
+        raise ValueError("reference_time must be timezone-aware UTC")
+
+    # Check cache first (cache key is date, not full timestamp)
+    cache_key = (team_symbol, reference_time.date())
+    if cache_key in cache:
+        return cache[cache_key]
+
+    # Search preloaded games
+    max_date = reference_time + timedelta(days=max_days_ahead)
+
+    for game in preloaded_games:
+        if game.game_date > reference_time and game.game_date <= max_date:
+            # Update horizon_minutes based on this specific reference_time
+            horizon_minutes = int((game.game_date - reference_time).total_seconds() / 60)
+
+            result = GameInfo(
+                game_date=game.game_date,
+                symbol=game.symbol,
+                opponent_abbr=game.opponent_abbr,
+                opponent_name=game.opponent_name,
+                horizon_minutes=horizon_minutes,
+                is_home=game.is_home,
+                point_differential=game.point_differential,
+            )
+
+            # Cache result
+            cache[cache_key] = result
+            return result
+
+    # No game found - cache the None result too
+    cache[cache_key] = None
+    return None
+
+
 def find_next_game(
     team_symbol: str,
     reference_time: datetime,
@@ -117,6 +257,9 @@ def find_next_game(
     Find the next scheduled game for a team after a reference time.
 
     Checks both completed games in database AND upcoming scheduled games from ESPN API.
+
+    NOTE: For batch processing, use preload_team_games() + find_next_game_cached() instead
+    to avoid repeated ESPN API calls.
 
     Args:
         team_symbol: Team symbol (e.g., "NFL:DAL_COWBOYS")

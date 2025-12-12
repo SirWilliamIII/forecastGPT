@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Service identification -->
+    <key>Label</key>
+    <string>com.bloomberggpt.backend</string>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/will/Programming/Projects/bloombergGPT/backend</string>
+
+    <!-- Command to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/will/Programming/Projects/bloombergGPT/backend/.venv/bin/uvicorn</string>
+        <string>app:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>9000</string>
+        <string>--reload</string>
+    </array>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>DATABASE_URL</key>
+        <string>postgresql://semantic:semantic@localhost:5433/semantic_markets</string>
+    </dict>
+
+    <!-- Auto-start on boot -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Keep alive - restart on crashes -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <!-- Restart throttle (don't restart more than once per 10 seconds) -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/Users/will/Programming/Projects/bloombergGPT/logs/backend-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/will/Programming/Projects/bloombergGPT/logs/backend-stderr.log</string>
+
+    <!-- Process type (Background = non-GUI) -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Nice value (lower priority than interactive apps) -->
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>

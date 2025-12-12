@@ -81,6 +81,8 @@ def forecast_nfl_event(
     lookback_days: int = 365,
     price_window_minutes: int = 60,
     alpha: float = 0.5,
+    preloaded_games: Optional[list] = None,
+    game_cache: Optional[dict] = None,
 ) -> NFLEventForecastResult:
     """
     Forecast how an event will affect a team's next game outcome.
@@ -95,6 +97,8 @@ def forecast_nfl_event(
         lookback_days: How far back to look for similar events
         price_window_minutes: Time window after event to find realized outcomes
         alpha: Distance weighting parameter (higher = more local)
+        preloaded_games: Optional list of preloaded GameInfo objects (for performance)
+        game_cache: Optional session cache dict (for performance)
 
     Returns:
         NFLEventForecastResult with win probability and game info
@@ -129,8 +133,18 @@ def forecast_nfl_event(
     if event_timestamp.tzinfo is None:
         event_timestamp = event_timestamp.replace(tzinfo=timezone.utc)
 
-    # Find next game after this event
-    next_game = find_next_game(team_symbol, event_timestamp, max_days_ahead=NFL_MAX_DAYS_AHEAD)
+    # Find next game after this event (use cached version if available for performance)
+    if preloaded_games is not None and game_cache is not None:
+        from signals.nfl_features import find_next_game_cached
+        next_game = find_next_game_cached(
+            team_symbol,
+            event_timestamp,
+            preloaded_games,
+            game_cache,
+            max_days_ahead=NFL_MAX_DAYS_AHEAD
+        )
+    else:
+        next_game = find_next_game(team_symbol, event_timestamp, max_days_ahead=NFL_MAX_DAYS_AHEAD)
 
     if not next_game:
         return NFLEventForecastResult(
