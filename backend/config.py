@@ -64,6 +64,13 @@ NFL_OUTCOMES_INTERVAL_HOURS = int(os.getenv("NFL_OUTCOMES_INTERVAL_HOURS", "24")
 NFL_OUTCOMES_LOOKBACK_WEEKS = int(os.getenv("NFL_OUTCOMES_LOOKBACK_WEEKS", "4"))
 DISABLE_NFL_OUTCOMES_INGEST = os.getenv("DISABLE_NFL_OUTCOMES_INGEST", "false").lower() == "true"
 
+# NFL News API Configuration (RapidAPI)
+NFL_NEWS_API_URL = os.getenv("NFL_NEWS_API_URL", "https://nfl-api-data.p.rapidapi.com/nfl-news")
+NFL_NEWS_API_HOST = os.getenv("NFL_NEWS_API_HOST", "nfl-api-data.p.rapidapi.com")
+NFL_NEWS_API_KEY = os.getenv("NFL_NEWS_API_KEY", "")  # Required: Set in .env
+NFL_NEWS_INGEST_INTERVAL_HOURS = int(os.getenv("NFL_NEWS_INGEST_INTERVAL_HOURS", "1"))
+DISABLE_NFL_NEWS_INGEST = os.getenv("DISABLE_NFL_NEWS_INGEST", "false").lower() in ("true", "1", "yes")
+
 # ═══════════════════════════════════════════════════════════════════════
 # Asset Symbol Configuration
 # ═══════════════════════════════════════════════════════════════════════

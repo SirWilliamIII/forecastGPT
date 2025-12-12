@@ -42,12 +42,14 @@ from config import (
     DISABLE_NFL_ELO_INGEST,
     DISABLE_BAKER_PROJECTIONS,
     DISABLE_NFL_OUTCOMES_INGEST,
+    DISABLE_NFL_NEWS_INGEST,
     RSS_INGEST_INTERVAL_HOURS,
     CRYPTO_BACKFILL_INTERVAL_HOURS,
     EQUITY_BACKFILL_INTERVAL_HOURS,
     NFL_ELO_BACKFILL_INTERVAL_HOURS,
     BAKER_PROJECTIONS_INTERVAL_HOURS,
     NFL_OUTCOMES_INTERVAL_HOURS,
+    NFL_NEWS_INGEST_INTERVAL_HOURS,
     NFL_OUTCOMES_LOOKBACK_WEEKS,
     API_MAX_EVENTS_LIMIT,
     API_MAX_NEIGHBORS_LIMIT,
@@ -117,6 +119,21 @@ def run_nfl_elo_backfill() -> None:
         print(f"[scheduler] NFL Elo backfill error: {e}")
 
 
+def run_nfl_news_ingest() -> None:
+    """Background job to ingest NFL news from RapidAPI."""
+    if DISABLE_NFL_NEWS_INGEST:
+        print("[scheduler] NFL News ingestion disabled (DISABLE_NFL_NEWS_INGEST=true)")
+        return
+    try:
+        from ingest.nfl_news_api import main as ingest_main
+
+        print("[scheduler] Running NFL News ingestion (skip_recent=True)...")
+        ingest_main(skip_recent=True)
+        print("[scheduler] NFL News ingestion complete.")
+    except Exception as e:
+        print(f"[scheduler] NFL News ingestion error: {e}")
+
+
 def run_baker_projections() -> None:
     """Background job to ingest Baker NFL projections (win probabilities)."""
     try:
@@ -166,6 +183,7 @@ def run_all_ingestion_jobs() -> None:
     try:
         print("[scheduler] Starting background ingestion...")
         run_rss_ingest()
+        run_nfl_news_ingest()
         run_crypto_backfill()
         run_equity_backfill()
         run_nfl_elo_backfill()
@@ -201,10 +219,16 @@ def startup_event() -> None:
     else:
         print("[scheduler] NFL outcomes job not scheduled (DISABLE_NFL_OUTCOMES_INGEST=true)")
 
+    # Schedule NFL News API ingestion (hourly)
+    if not DISABLE_NFL_NEWS_INGEST:
+        scheduler.add_job(run_nfl_news_ingest, "interval", hours=NFL_NEWS_INGEST_INTERVAL_HOURS, id="nfl_news")
+    else:
+        print("[scheduler] NFL News job not scheduled (DISABLE_NFL_NEWS_INGEST=true)")
+
     scheduler.start()
     print(
         "[scheduler] ✓ Started background scheduler "
-        "(RSS/Baker: hourly, crypto/equity/NFL: daily)"
+        "(RSS/Baker/NFL News: hourly, crypto/equity/NFL: daily)"
     )
 
     # Run initial ingestion in background thread (non-blocking)
