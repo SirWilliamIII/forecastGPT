@@ -62,7 +62,7 @@ jobs:
           echo "📦 Installing frontend dependencies..."
           ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 << 'EOF'
             cd /opt/bloomberggpt/frontend
-            npm install --production
+            npm ci  # Clean install all dependencies (including dev)
           EOF
 
       - name: Build Frontend
