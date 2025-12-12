@@ -790,13 +790,48 @@ For deeper understanding, consult:
   - [x] 1,699 games backfilled across 8 teams (2012-2024)
   - [x] Complete documentation in NFL_DATA_SETUP.md
 
+**Completed (December 12, 2025):**
+- [x] **Production Cloud Deployment** ✅
+  - Deployed to Oracle Cloud Infrastructure (maybe.probablyfine.lol)
+  - Ubuntu 22.04 ARM64 server at 84.8.155.16
+  - Systemd services: `bloomberggpt.service` (backend), `bloomberggpt-frontend.service`
+  - PostgreSQL 16 + pgvector in Docker with auto-restart
+  - Nginx reverse proxy for unified domain routing
+  - Auto-start on boot, auto-restart on crash (10s throttle)
+  - Data loaded: 1,089 crypto prices (BTC/ETH/XMR, 365 days), 104 NFL games, 361+ events
+  - Documentation: SERVICES.md with systemd service management guide
+  - macOS LaunchAgent setup for local development (auto-start on login)
+- [x] **Performance Optimizations (40x speedup)** ✅
+  - Batch SQL queries: 25 queries → 1 query per event (feature_extractor.py)
+  - Session-scoped game caching: 90+ API calls → 1-2 per backfill
+  - PostgreSQL UNNEST for batch timestamp windows
+  - 30-day NFL backfill: >120s timeout → 3-5s completion
+  - All temporal correctness tests passing (no lookahead bias)
+
+**Known Deployment Issues:**
+- **Frontend Cache Issue** (CRITICAL): Cloudflare aggressive caching serving old build
+  - Symptom: Pages show loading skeletons indefinitely
+  - Root cause: `Cache-Control: s-maxage=31536000` (1 year TTL) + Next.js build-time env vars
+  - Backend API confirmed working via curl tests
+  - Fix: Hard refresh (Ctrl+Shift+R) or purge Cloudflare cache
+- **NFL Historical Data**: SportsData API key invalid/expired
+  - Current season data (104 games) already loaded and functional
+  - Historical backfill blocked pending valid API key renewal
+
+**Production URLs:**
+- Frontend: http://maybe.probablyfine.lol
+- API Health: http://maybe.probablyfine.lol/health
+- Server: Oracle Cloud Ubuntu 22.04 ARM64 (84.8.155.16 via sshoracle)
+
 **Next Steps:**
+- [ ] Fix frontend cache issue (Cloudflare cache purge)
+- [ ] Renew SportsData.io API key for NFL historical backfill
 - [ ] Fix connection pool cleanup warnings
 - [ ] Consider removing `embed` column from PostgreSQL (storage optimization)
 - [ ] Add Weaviate availability monitoring
 - [ ] Explore Weaviate hybrid search (keyword + vector)
 - [ ] ML forecaster beyond baseline (XGBoost/LightGBM for crypto)
-- [ ] Production deployment (Render/Fly.io + Vercel)
+- [x] Production deployment ✅ (Oracle Cloud, not Render/Vercel)
 - [ ] Backtesting framework for NFL forecasts
 - [ ] Model registry and A/B testing
 - [ ] Structured logging (replace print statements)
