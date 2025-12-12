@@ -1,0 +1,130 @@
+name: Deploy to Oracle Production Server
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/deploy-production.yml'
+
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.ORACLE_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy Backend to Oracle Server
+        run: |
+          echo "📦 Deploying backend files..."
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='.cache' \
+            --exclude='.env' \
+            --exclude='*.pyc' \
+            --exclude='*.log' \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            backend/ \
+            ubuntu@84.8.155.16:/opt/bloomberggpt/
+
+      - name: Deploy Frontend to Oracle Server
+        run: |
+          echo "📦 Deploying frontend files..."
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.next' \
+            --exclude='.env.local' \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            frontend/ \
+            ubuntu@84.8.155.16:/opt/bloomberggpt/frontend/
+
+      - name: Install Frontend Dependencies
+        run: |
+          echo "📦 Installing frontend dependencies..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 << 'EOF'
+            cd /opt/bloomberggpt/frontend
+            npm install --production
+          EOF
+
+      - name: Build Frontend
+        run: |
+          echo "🔨 Building frontend..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 << 'EOF'
+            cd /opt/bloomberggpt/frontend
+            npm run build
+          EOF
+
+      - name: Restart Services
+        run: |
+          echo "🔄 Restarting services..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 << 'EOF'
+            sudo systemctl restart bloomberggpt.service
+            sudo systemctl restart bloomberggpt-frontend.service
+
+            echo "⏳ Waiting for services to start..."
+            sleep 5
+
+            echo "✅ Service status:"
+            sudo systemctl status bloomberggpt.service --no-pager -l | head -10
+            sudo systemctl status bloomberggpt-frontend.service --no-pager -l | head -10
+          EOF
+
+      - name: Health Check
+        run: |
+          echo "🏥 Running health checks..."
+
+          # Wait for backend to be ready
+          sleep 5
+
+          # Check backend health
+          BACKEND_STATUS=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 \
+            "curl -s http://localhost:9000/health | jq -r '.status' || echo 'error'")
+
+          if [ "$BACKEND_STATUS" = "ok" ]; then
+            echo "✅ Backend health check passed"
+          else
+            echo "❌ Backend health check failed: $BACKEND_STATUS"
+            exit 1
+          fi
+
+          # Check frontend is running
+          FRONTEND_STATUS=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 \
+            "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 || echo '000'")
+
+          if [ "$FRONTEND_STATUS" = "200" ]; then
+            echo "✅ Frontend health check passed"
+          else
+            echo "⚠️  Frontend returned status: $FRONTEND_STATUS (may still be building)"
+          fi
+
+      - name: Deployment Summary
+        run: |
+          echo "🎉 Deployment complete!"
+          echo "📍 Backend:  http://maybe.probablyfine.lol/health"
+          echo "📍 Frontend: http://maybe.probablyfine.lol"
+
+          # Show recent logs
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 << 'EOF'
+            echo ""
+            echo "📋 Recent backend logs:"
+            sudo journalctl -u bloomberggpt.service --since '30 seconds ago' --no-pager | tail -5
+          EOF
