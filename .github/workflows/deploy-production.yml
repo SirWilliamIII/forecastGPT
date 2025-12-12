@@ -95,14 +95,14 @@ jobs:
           # Wait for backend to be ready
           sleep 5
 
-          # Check backend health
-          BACKEND_STATUS=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 \
-            "curl -s http://localhost:9000/health | jq -r '.status' || echo 'error'")
+          # Check backend health (check if /health endpoint contains "ok")
+          BACKEND_RESPONSE=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ubuntu@84.8.155.16 \
+            "curl -s http://localhost:9000/health || echo 'error'")
 
-          if [ "$BACKEND_STATUS" = "ok" ]; then
+          if echo "$BACKEND_RESPONSE" | grep -q '"status".*"ok"'; then
             echo "✅ Backend health check passed"
           else
-            echo "❌ Backend health check failed: $BACKEND_STATUS"
+            echo "❌ Backend health check failed. Response: $BACKEND_RESPONSE"
             exit 1
           fi
 
