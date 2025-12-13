@@ -11,7 +11,12 @@ import type {
   NFLTeamForecast,
 } from "@/types/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
+// Use relative URLs in production (Nginx routes both frontend and backend)
+// Only use localhost:9000 for local development
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:9000"
+    : "");
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
