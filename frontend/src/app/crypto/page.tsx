@@ -182,12 +182,12 @@ export default function CryptoPage() {
                   availableHorizons={availableHorizons}
                 />
               </div>
-              {forecast?.features?.regime && (
+              {forecast?.features?.regime ? (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-500">Regime:</span>
                   <RegimeBadge regime={forecast.features.regime as string} size="sm" />
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Selected Event Indicator */}
@@ -261,7 +261,7 @@ export default function CryptoPage() {
                   symbol={symbol}
                   horizonMinutes={horizon}
                   baselineForecast={forecast}
-                  eventForecast={eventForecast}
+                  eventForecast={eventForecast ?? undefined}
                   eventTitle={selectedEvent.title}
                 />
               ) : (

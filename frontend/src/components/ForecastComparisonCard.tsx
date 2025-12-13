@@ -73,9 +73,9 @@ export function ForecastComparisonCard({
             </p>
           )}
         </div>
-        {baselineForecast.features?.regime && (
+        {baselineForecast.features?.regime ? (
           <RegimeBadge regime={baselineForecast.features.regime as string} />
-        )}
+        ) : null}
       </div>
 
       {/* Comparison Grid */}
