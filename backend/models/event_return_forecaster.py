@@ -5,6 +5,8 @@ from typing import List, Tuple
 from uuid import UUID
 
 from signals.feature_extractor import build_return_samples_for_event
+from models.confidence_utils import calculate_horizon_normalized_confidence
+from config import FORECAST_CONFIDENCE_SCALE
 
 
 @dataclass
@@ -18,6 +20,7 @@ class EventReturnForecastResult:
     p_down: float
     sample_size: int
     neighbors_used: int
+    confidence: float  # Added: horizon-normalized confidence score
 
 
 def _compute_weighted_moments(samples: List[Tuple[float, float]], alpha: float = 0.5):
@@ -92,6 +95,16 @@ def forecast_event_return(
 
     neighbors_used = min(k_neighbors, sample_size)  # rough diagnostic
 
+    # Calculate horizon-normalized confidence
+    # This ensures event forecasts at different horizons are comparable
+    confidence = calculate_horizon_normalized_confidence(
+        expected_return=expected,
+        volatility=std,
+        horizon_minutes=horizon_minutes,
+        sample_size=sample_size,
+        confidence_scale=FORECAST_CONFIDENCE_SCALE,
+    )
+
     return EventReturnForecastResult(
         event_id=event_id,
         symbol=symbol,
@@ -102,4 +115,5 @@ def forecast_event_return(
         p_down=p_down,
         sample_size=sample_size,
         neighbors_used=neighbors_used,
+        confidence=confidence,
     )

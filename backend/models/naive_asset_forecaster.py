@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, List
 from db import get_conn
 from signals.feature_extractor import build_features
 from config import FORECAST_DIRECTION_THRESHOLD, FORECAST_CONFIDENCE_SCALE
+from models.confidence_utils import calculate_horizon_normalized_confidence
 
 
 @dataclass
@@ -127,14 +128,16 @@ def forecast_asset(
     else:
         direction = "flat"
 
-    # crude "confidence": |signal| / (vol + epsilon), squashed to [0, 1]
-    if sigma == 0:
-        raw_score = 0.0
-    else:
-        raw_score = abs(expected) / (sigma + 1e-8)
-
-    # squash: assume raw_score ~ 0–2 typical, cap at 1.0
-    confidence = max(0.0, min(1.0, raw_score / FORECAST_CONFIDENCE_SCALE))
+    # Horizon-normalized confidence using proper statistical scaling
+    # This ensures 1-day and 30-day forecasts are comparable
+    # See models/confidence_utils.py for mathematical foundation
+    confidence = calculate_horizon_normalized_confidence(
+        expected_return=expected,
+        volatility=sigma,
+        horizon_minutes=horizon_minutes,
+        sample_size=n,
+        confidence_scale=FORECAST_CONFIDENCE_SCALE,
+    )
 
     feats = build_features(symbol, as_of, horizon_minutes, lookback_days)
 

@@ -1,0 +1,29 @@
+{
+  "overall": {
+    "ml_accuracy": 0.9933333333333333,
+    "naive_accuracy": 0.6,
+    "improvement": 0.3933333333333333,
+    "beats_baseline": true,
+    "n_samples": 150
+  },
+  "per_symbol": {
+    "BTC-USD": {
+      "ml_accuracy": 0.98,
+      "naive_accuracy": 0.54,
+      "improvement": 0.43999999999999995,
+      "n_samples": 50
+    },
+    "ETH-USD": {
+      "ml_accuracy": 1.0,
+      "naive_accuracy": 0.62,
+      "improvement": 0.38,
+      "n_samples": 50
+    },
+    "XMR-USD": {
+      "ml_accuracy": 1.0,
+      "naive_accuracy": 0.64,
+      "improvement": 0.36,
+      "n_samples": 50
+    }
+  }
+}

@@ -24,6 +24,7 @@ from models.event_return_forecaster import (
     EventReturnForecastResult,
 )
 from models.regime_classifier import classify_regime
+from models.ml_forecaster import forecast_asset_ml, is_ml_model_available
 from numeric.asset_projections import get_latest_projections
 
 # shared config for projections
@@ -318,6 +319,7 @@ class EventReturnForecastOut(BaseModel):
     p_down: float
     sample_size: int
     neighbors_used: int
+    confidence: float  # Horizon-normalized confidence score (0-1)
 
 
 class ProjectionOut(BaseModel):
@@ -373,6 +375,8 @@ class AssetForecastOut(BaseModel):
     features: Dict[str, Any]
     regime: Optional[str] = None
     regime_score: Optional[float] = None
+    model_type: Optional[str] = None  # "ml" or "naive"
+    model_name: Optional[str] = None  # e.g., "ml_forecaster_7d_rf" or "naive_baseline"
 
 
 class EventSummary(BaseModel):
@@ -854,10 +858,20 @@ def forecast_asset_endpoint(
     ),
 ) -> AssetForecastOut:
     """
-    Numeric baseline forecaster for a given asset symbol.
+    Asset forecaster with ML model fallback to naive baseline.
+
+    Strategy:
+    1. Try ML model if available for this (symbol, horizon)
+    2. If ML model unavailable or fails, fallback to naive baseline
+    3. Always return valid forecast (never fail)
 
     Example:
-      GET /forecast/asset?symbol=BTC-USD&horizon_minutes=1440&lookback_days=60
+      GET /forecast/asset?symbol=BTC-USD&horizon_minutes=10080&lookback_days=60
+
+    Response includes:
+      - model_type: "ml" or "naive" (which model was used)
+      - model_name: specific model identifier
+      - All standard forecast fields (direction, confidence, etc.)
 
     Validation:
       - horizon_minutes: 1 to 43200 (30 days)
@@ -865,18 +879,40 @@ def forecast_asset_endpoint(
     """
     as_of = datetime.now(tz=timezone.utc)
 
-    asset_res = forecast_asset(
-        symbol=symbol,
-        as_of=as_of,
-        horizon_minutes=horizon_minutes,
-        lookback_days=lookback_days,
-    )
+    # Try ML model first (if available for this symbol + horizon)
+    ml_result = None
+    if is_ml_model_available(symbol, horizon_minutes):
+        ml_result = forecast_asset_ml(
+            symbol=symbol,
+            as_of=as_of,
+            horizon_minutes=horizon_minutes,
+            lookback_days=lookback_days,
+        )
 
+    # Use ML result if successful, otherwise fallback to naive
+    if ml_result:
+        asset_res = ml_result
+        model_type = "ml"
+        model_name = f"ml_forecaster_{horizon_minutes // 1440}d_rf"
+    else:
+        asset_res = forecast_asset(
+            symbol=symbol,
+            as_of=as_of,
+            horizon_minutes=horizon_minutes,
+            lookback_days=lookback_days,
+        )
+        model_type = "naive"
+        model_name = "naive_baseline"
+
+    # Get market regime
     regime_res = classify_regime(symbol, as_of)
 
+    # Build response
     payload = asset_res.to_dict()
     payload["regime"] = regime_res.regime
     payload["regime_score"] = regime_res.score
+    payload["model_type"] = model_type
+    payload["model_name"] = model_name
 
     return AssetForecastOut(**payload)
 
