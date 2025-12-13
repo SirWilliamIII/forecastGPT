@@ -1085,6 +1085,122 @@ See `DEPLOYMENT.md` for deployment monitoring and troubleshooting.
 
 This represents the shift from infrastructure work to core product value.
 
+### Production Deployment Issues & Fixes (December 13, 2025)
+
+**Problem: ML Forecasting System Deployed But Not Visible**
+
+After committing and deploying the complete ML system, users couldn't see the new features due to multiple production issues:
+
+**1. TypeScript Build Failures** ❌
+- **Issue**: Production build failed with `Type 'unknown' is not assignable to type 'ReactNode'`
+- **Root Cause**: Using `&&` operator for conditional rendering returns `unknown` when falsy
+- **Files Affected**:
+  - `frontend/src/app/crypto/page.tsx` line 185
+  - `frontend/src/components/ForecastComparisonCard.tsx` line 76
+- **Fix**: Changed `&&` to ternary operators with explicit `null`:
+  ```tsx
+  // BEFORE (broken):
+  {forecast?.features?.regime && (<RegimeBadge ... />)}
+
+  // AFTER (fixed):
+  {forecast?.features?.regime ? (<RegimeBadge ... />) : null}
+  ```
+- **Files Modified**:
+  - `frontend/src/app/crypto/page.tsx` - Fixed regime badge conditional
+  - `frontend/src/components/ForecastComparisonCard.tsx` - Fixed regime badge conditional
+  - Added `eventForecast ?? undefined` for prop type compatibility
+
+**2. API Calls to localhost:9000 in Production** ❌
+- **Issue**: Frontend making API calls to `http://localhost:9000` instead of production API
+- **Root Cause**: `api.ts` defaulted to localhost when `NEXT_PUBLIC_API_URL` env var missing
+- **Why Env Var Missing**: GitHub Actions rsync excludes `.env.local` files (security)
+- **Initial Failed Fix**: Creating `.env.local` on server was deleted by `rsync --delete`
+- **Proper Fix**: Smart hostname detection for relative URLs:
+  ```typescript
+  // BEFORE:
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
+
+  // AFTER:
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL ||
+    (typeof window !== "undefined" && window.location.hostname === "localhost"
+      ? "http://localhost:9000"
+      : "");  // Use relative URLs in production
+  ```
+- **File Modified**: `frontend/src/lib/api.ts` - Auto-detect production vs local development
+- **Benefits**:
+  - No env vars needed in production
+  - Works automatically with Nginx reverse proxy
+  - Localhost development still works
+
+**3. Cloudflare Aggressive Caching (1-year TTL)** ❌
+- **Issue**: Deployments invisible to users - Cloudflare serving old cached bundle for 1 year
+- **Root Cause**: Next.js default headers set `s-maxage=31536000` (1 year)
+- **Symptoms**:
+  - New code deployed successfully
+  - API calls work via curl
+  - Users see old broken version (localhost:9000 errors)
+  - Cache purge required for every deployment
+- **Fix**: Updated `next.config.ts` with proper cache headers:
+  ```typescript
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=300, s-maxage=300, stale-while-revalidate=600",
+          },
+        ],
+      },
+    ];
+  }
+  ```
+- **File Modified**: `frontend/next.config.ts` - Added cache header configuration
+- **Impact**:
+  - **Before**: 1-year cache, deployments invisible without manual purge
+  - **After**: 5-minute cache, deployments visible automatically
+  - Future deployments auto-refresh within 5 minutes
+  - One-time Cloudflare cache purge required to clear old bundle
+
+**4. GitHub Actions SSH Connection Reset** ⚠️
+- **Issue**: Deployment failed with `Connection reset by 84.8.155.16 port 22`
+- **Root Cause**: Multiple rapid deployments (4 commits) triggered SSH rate limiting
+- **Context**: Server showed `*** System restart required ***` (pending kernel updates)
+- **Workaround**: Manual deployment via SSH:
+  ```bash
+  cd /opt/bloomberggpt/frontend
+  npm run build
+  sudo systemctl restart bloomberggpt-frontend
+  ```
+- **Resolution**: Subsequent deployments succeeded after brief waiting period
+
+**5. Mixed Content Warning (HTTPS → HTTP)** ❌
+- **Issue**: Browser blocked HTTP API calls from HTTPS page
+- **Error**: `Mixed Content: requested insecure resource http://...`
+- **Resolution**: Relative URLs fix (item #2) automatically resolved this
+
+**Final Working Solution:**
+1. ✅ TypeScript errors fixed (ternary operators with explicit null)
+2. ✅ Smart hostname detection for API URLs (no env vars needed)
+3. ✅ Cloudflare cache headers fixed (5-min TTL)
+4. ✅ One-time cache purge performed
+5. ✅ All features visible and working in production
+
+**Lessons Learned:**
+- **Never rely on `.env` files for production config** - rsync excludes them
+- **Use relative URLs when frontend/backend share domain** - simpler and more reliable
+- **Default cache headers matter** - aggressive caching breaks deployments
+- **Test production builds locally** - catches TypeScript errors before deployment
+- **One-time manual intervention OK** - if it prevents future issues (cache purge)
+
+**Commits:**
+- `bdeb800` - TypeScript fixes (ternary operators)
+- `4576fc3` - Cloudflare cache header fix (5-min TTL)
+- `be0a3ff` - Smart hostname detection (relative URLs)
+
+This represents the shift from infrastructure work to core product value.
+
 ### Earlier Fixes (December 5, 2025)
 - **Frontend Reorganization**: Separated single confusing dashboard into dedicated domain pages
   - `/` - Clean landing page with navigation cards
