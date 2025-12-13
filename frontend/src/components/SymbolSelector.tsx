@@ -7,7 +7,10 @@ interface SymbolSelectorProps {
 }
 
 // Default symbol info with common crypto/equity patterns
-function getSymbolInfo(symbol: string): { name: string; color: string } {
+// Note: Equity symbols (NVDA, etc.) removed from forecasting due to poor backtesting results
+// (31.6% accuracy vs 61-66% for crypto). Different market dynamics (trading hours, gaps)
+// require equity-specific models.
+function getSymbolInfo(symbol: string): { name: string; color: string; isEquity?: boolean } {
   // Crypto patterns
   if (symbol.includes("-USD")) {
     const asset = symbol.replace("-USD", "");
@@ -21,14 +24,16 @@ function getSymbolInfo(symbol: string): { name: string; color: string } {
     return {
       name: asset,
       color: colors[asset] || "bg-blue-500",
+      isEquity: false,
     };
   }
 
-  // Equity patterns
+  // Equity patterns (currently excluded from crypto forecasting)
   if (symbol.match(/^[A-Z]{1,5}$/)) {
     return {
       name: symbol,
       color: "bg-emerald-500",
+      isEquity: true,
     };
   }
 
@@ -40,7 +45,13 @@ function getSymbolInfo(symbol: string): { name: string; color: string } {
 }
 
 export function SymbolSelector({ value, onChange, availableSymbols = [] }: SymbolSelectorProps) {
-  const symbols = availableSymbols.length > 0 ? availableSymbols : [value];
+  // Filter out equity symbols due to poor backtesting results (31.6% accuracy)
+  // Only show crypto symbols which have validated 61-66% accuracy
+  const filteredSymbols = availableSymbols.length > 0
+    ? availableSymbols.filter(s => !getSymbolInfo(s).isEquity)
+    : [value];
+
+  const symbols = filteredSymbols.length > 0 ? filteredSymbols : [value];
 
   return (
     <div className="flex gap-2">

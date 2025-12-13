@@ -61,6 +61,16 @@ export async function getSimilarEvents(
   );
 }
 
+// Helper to get a single event's details
+// Note: Backend doesn't have a dedicated single event endpoint,
+// so we fetch from recent events and filter, or use analyze endpoint
+export async function getEventDetails(eventId: string): Promise<EventSummary | null> {
+  // Try to find in recent events first
+  const recentEvents = await getRecentEvents(200); // Fetch more to increase chances
+  const event = recentEvents.find((e) => e.id === eventId);
+  return event || null;
+}
+
 // Forecasts
 export async function getAssetForecast(
   symbol: string,

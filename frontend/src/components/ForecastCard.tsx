@@ -1,6 +1,6 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Minus, AlertCircle } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
 import type { AssetForecast } from "@/types/api";
 
 interface ForecastCardProps {
@@ -18,17 +18,28 @@ export function ForecastCard({ forecast, title }: ForecastCardProps) {
   };
 
   const getDirectionIcon = () => {
-    if (direction === "up")
+    // Binary classification only - "flat" predictions showed 0% accuracy in backtesting
+    // Treat flat as up/down based on expected_return sign
+    const effectiveDirection = direction === "flat"
+      ? (expected_return && expected_return >= 0 ? "up" : "down")
+      : direction;
+
+    if (effectiveDirection === "up")
       return <TrendingUp className="h-6 w-6 text-green-500" />;
-    if (direction === "down")
+    if (effectiveDirection === "down")
       return <TrendingDown className="h-6 w-6 text-red-500" />;
-    return <Minus className="h-6 w-6 text-gray-400" />;
+    return <TrendingUp className="h-6 w-6 text-green-500" />; // Default to up
   };
 
   const getDirectionColor = () => {
-    if (direction === "up") return "text-green-500";
-    if (direction === "down") return "text-red-500";
-    return "text-gray-400";
+    // Binary classification only - "flat" predictions showed 0% accuracy in backtesting
+    const effectiveDirection = direction === "flat"
+      ? (expected_return && expected_return >= 0 ? "up" : "down")
+      : direction;
+
+    if (effectiveDirection === "up") return "text-green-500";
+    if (effectiveDirection === "down") return "text-red-500";
+    return "text-green-500"; // Default to up
   };
 
   const isLowConfidence = n_points < 10;

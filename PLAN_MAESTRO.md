@@ -94,10 +94,10 @@ Currently stored in asset_returns (name is legacy; concept is general):
 Each row represents **the realized change of some metric for some target over some horizon**:
 
 - symbol – opaque ID for the target
-    - examples: BTC-USD, NVDA, PRESIDENT:TRUMP, NFL:KC_CHIEFS
+  - examples: BTC-USD, NVDA, PRESIDENT:TRUMP, NFL:KC_CHIEFS
 - as_of – reference time (UTC)
 - horizon_minutes – horizon length (can stand in for longer horizons via convention)
-- realized_return – realized *change* in the metric over the horizon
+- realized_return – realized _change_ in the metric over the horizon
 - price_start, price_end – current code assumes financial “price”; conceptually: metric_start / metric_end
 
 In code and future docs, treat:
@@ -125,8 +125,8 @@ Guarantees:
 - CORS configured
 - /health endpoint working
 - Scheduler running:
-    - RSS ingestion (hourly)
-    - numeric backfill (daily; currently BTC/ETH/XMR demo)
+  - RSS ingestion (hourly)
+  - numeric backfill (daily; currently BTC/ETH/XMR demo)
 - Baseline forecaster operational
 - Event-conditioned forecaster operational
 - Regime classifier operational
@@ -145,7 +145,7 @@ ingest/rss_ingest.py:
 
 - Pull from multiple sources (Hacker News, Wired AI, CoinDesk, etc.)
 - Normalize:
-    - clean_text, summary, source, categories, tags
+  - clean_text, summary, source, categories, tags
 - Deduplicate via canonical URL
 - Store in events with UTC timestamps
 - Generate embeddings from clean_text
@@ -242,17 +242,18 @@ LLM tasks:
 1. Use feature_extractor to build a dataset for one or more (symbol, metric, horizon) combos.
 2. Apply strict time-based split into train/test (no shuffle).
 3. Train models:
-    - RandomForestRegressor
-    - GradientBoostingRegressor
 
-        (Later: XGBoost, LightGBM, linear baselines)
+   - RandomForestRegressor
+   - GradientBoostingRegressor
 
-1. Evaluate:
-    - MAE
-    - RMSE
-    - directional accuracy (sign of delta)
-1. Generate feature importance plots.
-2. Serialize model + metadata.
+     (Later: XGBoost, LightGBM, linear baselines)
+
+4. Evaluate:
+   - MAE
+   - RMSE
+   - directional accuracy (sign of delta)
+5. Generate feature importance plots.
+6. Serialize model + metadata.
 
 ### **3.2 Serialization Format**
 
@@ -319,10 +320,10 @@ For a given event and target:
 3. For each neighbor, collect the realized metric_delta for the target over the chosen horizon around that neighbor’s timestamp.
 4. Weight each neighbor’s delta by similarity (sim^p, or similar scheme).
 5. Aggregate into:
-    - expected_return (expected delta)
-    - p_up, p_down
-    - std of deltas
-    - sample_size
+   - expected_return (expected delta)
+   - p_up, p_down
+   - std of deltas
+   - sample_size
 
 This logic is independent of whether the target is BTC or something else; the only requirement is: we have historical metric_deltas for that target over that horizon.
 
@@ -331,7 +332,7 @@ This logic is independent of whether the target is BTC or something else; the on
 LLM tasks:
 
 - Maintain cluster centroids of embeddings for themes like:
-    - regulation, AI, macro, elections, sports_injury, etc.
+  - regulation, AI, macro, elections, sports_injury, etc.
 - Optionally store cluster label(s) on events.
 - Allow per-domain centroids to be added over time.
 
@@ -339,9 +340,9 @@ LLM tasks:
 
 - If sample_size < 8: mark forecast as low-confidence.
 - Traffic light:
-    - green: p_up > 0.6 (or domain-specific threshold)
-    - yellow: 0.4 ≤ p_up ≤ 0.6
-    - red: p_up < 0.4
+  - green: p_up > 0.6 (or domain-specific threshold)
+  - yellow: 0.4 ≤ p_up ≤ 0.6
+  - red: p_up < 0.4
 
 API should include both raw numbers and a simple label (“green/yellow/red”) for frontend use.
 
@@ -356,18 +357,18 @@ The current UI shows BTC/ETH/XMR, but design must be viewed as **generic target 
 - Target selector (currently BTC/ETH/XMR, later arbitrary list).
 - Horizon selector (1h, 4h, 24h, etc.; later 1w, 2w, multi-year).
 - Main card:
-    - expected_return (metric_delta)
-    - horizon label
-    - confidence bar
-    - regime tag
-    - numeric context snapshot (key features).
+  - expected_return (metric_delta)
+  - horizon label
+  - confidence bar
+  - regime tag
+  - numeric context snapshot (key features).
 
 ### **5.2 Events Panel**
 
 - Shows recent events by default.
 - Later, can filter to “events most relevant to selected target” using:
-    - similarity of events to target-specific centroids, or
-    - event-conditioned impact scoring.
+  - similarity of events to target-specific centroids, or
+  - event-conditioned impact scoring.
 
 ### **5.3 Event Details Page**
 
@@ -397,9 +398,9 @@ For a single event:
 ### **6.2 CI/CD**
 
 - GitHub Actions (or equivalent):
-    - run tests (uv run pytest)
-    - optional: lint
-    - build + deploy on main branch
+  - run tests (uv run pytest)
+  - optional: lint
+  - build + deploy on main branch
 
 ### **6.3 Monitoring (Stretch)**
 
@@ -416,14 +417,14 @@ For a single event:
 2. Embeddings are always computed from clean_text (fallback raw_text).
 3. All DB writes are idempotent and respect uniqueness constraints.
 4. Forecast endpoints always return:
-    - expected_return (metric_delta)
-    - direction
-    - confidence
-    - sample_size
-1. API response schemas are stable; changes require versioning.
-2. New features must be added behind version flags or clearly annotated feature versions.
-3. No lookahead bias in any feature or label construction.
-4. ML models must always have a naive baseline fallback path.
+   - expected_return (metric_delta)
+   - direction
+   - confidence
+   - sample_size
+5. API response schemas are stable; changes require versioning.
+6. New features must be added behind version flags or clearly annotated feature versions.
+7. No lookahead bias in any feature or label construction.
+8. ML models must always have a naive baseline fallback path.
 
 These rules apply regardless of domain (crypto, elections, sports, etc.).
 
@@ -438,9 +439,9 @@ These rules apply regardless of domain (crypto, elections, sports, etc.).
 - Backtesting framework (intraday + multi-horizon)
 - Model registry + A/B testing between forecasters
 - Dedicated domain modules:
-    - Elections mode
-    - NFL mode
-    - Macro mode
+  - Elections mode
+  - NFL mode
+  - Macro mode
 
 ---
 
@@ -460,6 +461,7 @@ Conceptually, this is now a **semantic-to-metric forecasting OS** where BTC is j
 ## **10. Recent Progress / Gaps / Next Steps**
 
 - **Progress (December 10, 2025)**
+
   - **NFL Analytics System Complete** ✅
     - Comprehensive ML forecasting with daily automated updates
     - Data: 1,699 games across 8 teams (2012-2024)
@@ -488,6 +490,7 @@ Conceptually, this is now a **semantic-to-metric forecasting OS** where BTC is j
   - Header-based auth for Baker; scheduler wired for hourly projections; Elo job can be disabled via `DISABLE_NFL_ELO_INGEST`
 
 - **Issues / Debt**
+
   - NFL Elo source (FiveThirtyEight CSV) currently fails; ingestion disabled via env when noisy. Needs replacement source.
   - Connection pool cleanup warnings (minor; Python scripts show thread cleanup warnings on exit)
   - RSS `feed_metadata` required schema init; keep migrations explicit going forward
